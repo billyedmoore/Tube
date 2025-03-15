@@ -1,0 +1,25 @@
+# Written by the AI overlords
+
+# Node modules
+node_modules/
+
+# PNPM store
+.pnpm/
+
+# Build output
+dist/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Logs
+*.log
+
+# Environment variables file
+.env
+.*.env
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
