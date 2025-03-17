@@ -1,9 +1,4 @@
-interface FileRecieveSession {
-	sendID: string;
-	senderPublicKey: string;
-}
-
-function handleRecieveFormComplete(event: SubmitEvent): void {
+export function handleRecieveFormComplete(event: SubmitEvent): void {
 	event.preventDefault();
 
 	const fileName = (document.getElementById('fileName') as HTMLInputElement).value;

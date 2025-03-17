@@ -1,3 +1,1 @@
-import { Crypto } from "@peculiar/webcrypto"
-
-global.crypto = new Crypto()
+global.crypto = globalThis.crypto
