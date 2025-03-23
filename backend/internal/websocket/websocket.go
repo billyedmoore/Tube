@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"bytes"
 	"crypto/sha1"
 	"encoding/base64"
 	"encoding/binary"
@@ -10,6 +11,33 @@ import (
 	"net"
 	"net/http"
 	"strings"
+)
+
+type Connection struct {
+	// no lock atm as channels & connections are thread safe
+	incoming chan []byte
+
+	conn net.Conn
+}
+
+type frame struct {
+	fin           bool
+	operation     opcode
+	mask          bool
+	maskKey       uint32
+	payloadLength uint64
+	payload       []byte
+}
+
+type opcode uint8
+
+const (
+	CONTINUATION_FRAME opcode = 0x0
+	TEXT_FRAME         opcode = 0x1
+	BINARY_FRAME       opcode = 0x2
+	CLOSE_FRAME        opcode = 0x8
+	PING_FRAME         opcode = 0x9
+	PONG_FRAME         opcode = 0xA
 )
 
 func checkHeader(r *http.Request, key string, value string) bool {
@@ -42,13 +70,6 @@ func assert(conditional bool) {
 	if !conditional {
 		log.Fatalf("Assertion failed.")
 	}
-}
-
-type Connection struct {
-	// no lock atm as channels are thread safe
-	incoming chan []byte
-
-	conn net.Conn
 }
 
 func readWorker(connection *Connection) {
@@ -94,22 +115,13 @@ func Close(connection *Connection, data []byte) error {
 	return err
 }
 
-type frame struct {
-	fin           bool
-	opcode        uint8
-	mask          bool
-	maskKey       uint32
-	payloadLength uint64
-	payload       []byte
-}
-
 func parseFrame(recievedData []byte) (frame, error) {
 	if len(recievedData) < 2 {
 		return frame{}, fmt.Errorf("Not a valid frame, not enough bytes.")
 	}
 
 	var fin bool = (recievedData[0] & 1) != 0
-	var opcode uint8 = (recievedData[0] << 4) & 0xF0
+	var operation opcode = opcode((recievedData[0] << 4) & 0xF0)
 	var mask bool = (recievedData[1] & 1) != 0
 	var payloadLength uint64 = uint64((recievedData[1] << 1) & 0xFE)
 	var maskKey uint32 = 0
@@ -138,9 +150,62 @@ func parseFrame(recievedData []byte) (frame, error) {
 	var payload = make([]byte, payloadLength)
 	copy(payload, recievedData[nextByteIndex:])
 
-	data := frame{fin: fin, opcode: opcode, mask: mask,
+	data := frame{fin: fin, operation: operation, mask: mask,
 		maskKey: maskKey, payloadLength: payloadLength, payload: payload}
 	return data, nil
+}
+
+func encodeFrame(data frame) []byte {
+	var fin uint8 = 0
+
+	if data.fin {
+		fin = 1
+	}
+
+	var mask uint8 = 0
+
+	if data.mask {
+		mask = 1
+	}
+
+	var op uint8 = uint8(data.operation)
+	var firstByte uint8 = (op >> 4) + fin
+	var secondByte uint8 = mask + (op >> 1)
+
+	var payloadLengthBytes []byte
+
+	if data.payloadLength < 125 {
+		payloadLengthBytes = make([]byte, 1)
+		payloadLengthBytes[0] = uint8(data.payloadLength)
+	} else if data.payloadLength < 4294967295 {
+		payloadLengthBytes = make([]byte, 4)
+		binary.BigEndian.PutUint32(payloadLengthBytes, uint32(data.payloadLength))
+	} else {
+		payloadLengthBytes = make([]byte, 8)
+		binary.BigEndian.PutUint64(payloadLengthBytes, uint64(data.payloadLength))
+	}
+
+	var maskKeyBytes []byte
+
+	if data.mask {
+		maskKeyBytes = make([]byte, 4)
+		binary.BigEndian.PutUint32(maskKeyBytes, data.maskKey)
+	} else {
+		maskKeyBytes = make([]byte, 0)
+	}
+
+	var payloadBytes []byte = make([]byte, data.payloadLength)
+	copy(data.payload, payloadBytes)
+
+	var buffer bytes.Buffer
+
+	buffer.Write([]byte{firstByte, secondByte})
+	buffer.Write(payloadLengthBytes)
+	buffer.Write(maskKeyBytes)
+	buffer.Write(payloadBytes)
+
+	return buffer.Bytes()
+
 }
 
 // Upgrade from http -> websocket, hijacks the connection
