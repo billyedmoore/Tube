@@ -27,7 +27,8 @@ type frame struct {
 	mask          bool
 	maskKey       uint32
 	payloadLength uint64
-	payload       []byte
+	// event if frame is masked payload should be unmasked
+	payload []byte
 }
 
 type opcode uint8
@@ -154,8 +155,16 @@ func parseFrame(recievedData []byte) (frame, error) {
 	if uint64(len(recievedData[nextByteIndex:])) < payloadLength {
 		return frame{}, fmt.Errorf("Not a valid frame, not enough bytes (payload shorter than payload length).")
 	}
-	var payload = make([]byte, payloadLength)
-	copy(payload, recievedData[nextByteIndex:])
+	var payload []byte = make([]byte, payloadLength)
+	if mask {
+		payloadBytes, err := applyMask(maskKey, recievedData[nextByteIndex:])
+		if err != nil {
+			return frame{}, fmt.Errorf("Masking failed.")
+		}
+		copy(payload, payloadBytes)
+	} else {
+		copy(payload, recievedData[nextByteIndex:])
+	}
 
 	data := frame{fin: fin, operation: operation, mask: mask,
 		maskKey: maskKey, payloadLength: payloadLength, payload: payload}
@@ -204,7 +213,20 @@ func newCloseFrame() (frame, error) {
 	return frm, nil
 }
 
-func encodeFrame(data frame) []byte {
+func applyMask(maskKey uint32, payload []byte) ([]byte, error) {
+	mask := make([]byte, 4)
+	binary.BigEndian.PutUint32(mask, maskKey)
+
+	maskedPayload := make([]byte, len(payload))
+
+	for index, value := range payload {
+		maskedPayload[index] = value ^ mask[index%4]
+	}
+
+	return maskedPayload, nil
+}
+
+func encodeFrame(data frame) ([]byte, error) {
 	var fin uint8 = 0
 
 	if data.fin {
@@ -242,9 +264,16 @@ func encodeFrame(data frame) []byte {
 	} else {
 		maskKeyBytes = make([]byte, 0)
 	}
+	var payloadBytes []byte
 
-	var payloadBytes []byte = make([]byte, data.payloadLength)
-	copy(data.payload, payloadBytes)
+	if data.mask {
+		payloadBytes = make([]byte, data.payloadLength)
+		copy(data.payload, payloadBytes)
+	} else {
+		var err error
+		payloadBytes, err = applyMask(data.maskKey, data.payload)
+		return nil, err
+	}
 
 	var buffer bytes.Buffer
 
@@ -253,7 +282,7 @@ func encodeFrame(data frame) []byte {
 	buffer.Write(maskKeyBytes)
 	buffer.Write(payloadBytes)
 
-	return buffer.Bytes()
+	return buffer.Bytes(), nil
 
 }
 
