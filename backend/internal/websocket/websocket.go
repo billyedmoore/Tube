@@ -14,10 +14,10 @@ import (
 )
 
 type Connection struct {
-	// no lock atm as channels & connections are thread safe
-	incoming chan []byte
-
-	conn net.Conn
+	lock         sync.Mutex
+	incoming     chan []byte
+	instantiated bool
+	conn         net.Conn
 }
 
 type frame struct {
@@ -92,14 +92,26 @@ func readWorker(connection *Connection) {
 }
 
 // New connection object or error (no errors yet)
-func newConnection(conn net.Conn) (*Connection, error) {
+func CreateConnection() (*Connection, error) {
 	connection := &Connection{
-		incoming: make(chan []byte),
-		conn:     conn}
+		incoming:     make(chan []byte),
+		instantiated: false,
+	}
 
-	// handle Reads data as it comes in
-	go readWorker(connection)
 	return connection, nil
+}
+
+// Update the connection with the underlying connection
+func instantiateConnection(connection *Connection, conn net.Conn) error {
+	connection.lock.Lock()
+	connection.conn = conn
+	connection.instantiated = true
+	connection.lock.Unlock()
+
+	// Handle incoming messages as they come
+	go readWorker(connection)
+
+	return nil
 }
 
 func Write(connection *Connection, data []byte) error {
@@ -208,24 +220,39 @@ func encodeFrame(data frame) []byte {
 
 }
 
-// Upgrade from http -> websocket, hijacks the connection
-func UpgradeConnection(w http.ResponseWriter, r *http.Request) *Connection {
+// Upgrade from http -> websocket, hijacks the connection if successful
+// We dont
+func UpgradeConnection(w http.ResponseWriter, r *http.Request, connection *Connection) error {
 
 	var challengeKey string = r.Header.Get("Sec-Websocket-Key")
 
-	// Check the incoming request is a valid websocket upgrade and we can handle it
-	//TODO: handle these errors gracefully, return an http error
-	assert(checkHeader(r, "Upgrade", "websocket"))
-	assert(checkHeader(r, "Connection", "Upgrade"))
-	assert(checkHeader(r, "Sec-Websocket-Version", "13"))
-	assert(isValidChallengeKey(challengeKey))
-	assert(r.Method == http.MethodGet)
+	if (!checkHeader(r, "Upgrade", "websocket")) ||
+		(!checkHeader(r, "Connection", "Upgrade")) ||
+		(!checkHeader(r, "Sec-Websocket-Version", "13")) {
+		return fmt.Errorf("Invalid headers for websocket upgrade.")
+	}
+
+	if !isValidChallengeKey(challengeKey) {
+		return fmt.Errorf("Invalid challenge key.")
+	}
+
+	if !(r.Method == http.MethodGet) {
+		return fmt.Errorf("Can only upgrade GET requests.")
+	}
 
 	wAsHijacker, ok := w.(http.Hijacker)
-	assert(ok) // TODO: error handling
+
+	if !ok {
+		return fmt.Errorf("Failed to Hijack.")
+	}
 
 	underlyingConnection, buffer, err := wAsHijacker.Hijack()
-	assert(err == nil) // TODO: error handling
+
+	if err != nil {
+		return err
+	}
+
+	instantiateConnection(connection, underlyingConnection)
 
 	// Build the response
 	response := []string{
@@ -238,11 +265,19 @@ func UpgradeConnection(w http.ResponseWriter, r *http.Request) *Connection {
 	}
 
 	_, err = buffer.WriteString(strings.Join(response, "\r\n"))
-	assert(err == nil) // TODO: error handling
-	err = buffer.Flush()
-	assert(err == nil) // TODO: error handling
 
-	conn, err := newConnection(underlyingConnection)
-	assert(err == nil) // TODO: error handling
-	return conn
+	//TODO: Consider if there is a way of handling these such that the client
+	//	can still be sent an error message, current behaviour is the connection
+	//	is hijacked so sending anything to w is unusable.
+
+	if err != nil {
+		return err
+	}
+
+	err = buffer.Flush()
+
+	if err != nil {
+		return err
+	}
+	return nil
 }
