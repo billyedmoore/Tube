@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 )
 
 type Connection struct {
@@ -64,12 +65,6 @@ func generateAcceptKey(challengeString string) string {
 	guid := []byte("258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
 	data := sha1.Sum(append([]byte(challengeString), guid...))
 	return base64.StdEncoding.EncodeToString(data[:])
-}
-
-func assert(conditional bool) {
-	if !conditional {
-		log.Fatalf("Assertion failed.")
-	}
 }
 
 func readWorker(connection *Connection) {
@@ -165,6 +160,48 @@ func parseFrame(recievedData []byte) (frame, error) {
 	data := frame{fin: fin, operation: operation, mask: mask,
 		maskKey: maskKey, payloadLength: payloadLength, payload: payload}
 	return data, nil
+}
+
+func newBinaryFrame(data []byte) (frame, error) {
+	payload := make([]byte, len(data))
+	copy(payload, data)
+	frm := frame{fin: true, operation: BINARY_FRAME,
+		mask: false, payloadLength: uint64(len(data)), payload: payload}
+
+	return frm, nil
+}
+
+func newPongFrame(data []byte) (frame, error) {
+	payload := make([]byte, len(data))
+	copy(payload, data)
+	frm := frame{fin: true, operation: PONG_FRAME,
+		mask: false, payloadLength: uint64(len(data)), payload: payload}
+
+	return frm, nil
+}
+
+func newPingFrame() (frame, error) {
+	payload := []byte("Ping!") // optional content
+	frm := frame{fin: true, operation: PING_FRAME,
+		mask: false, payloadLength: uint64(len(payload)), payload: payload}
+
+	return frm, nil
+}
+
+func newCloseFrame() (frame, error) {
+	var buffer bytes.Buffer
+	code := make([]byte, 2)
+
+	// normal closure
+	// TODO: select error code situationally
+	binary.BigEndian.PutUint16(code, 1000)
+	buffer.Write([]byte("Connection closed normally."))
+	payload := buffer.Bytes()
+
+	frm := frame{fin: true, operation: CLOSE_FRAME,
+		mask: false, payloadLength: uint64(len(payload)), payload: payload}
+
+	return frm, nil
 }
 
 func encodeFrame(data frame) []byte {
