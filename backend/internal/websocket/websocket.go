@@ -7,7 +7,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"strings"
@@ -80,8 +79,34 @@ func readWorker(connection *Connection) {
 			if err != nil {
 				data := make([]byte, n)
 				copy(data, buffer[:n])
-				//TODO: parse out the actual data frame
-				connection.incoming <- data
+				frm, err := decodeFrame(data)
+				if err != nil {
+					fmt.Println("Failed to decode frame.")
+				}
+				switch frm.operation {
+				case BINARY_FRAME:
+					connection.incoming <- frm.payload
+				case PING_FRAME:
+					pong, err := newPongFrame(frm.payload)
+					if err != nil {
+						fmt.Println("Failed to create pong frame.")
+					}
+					pongFrameBytes, err := encodeFrame(pong)
+					if err != nil {
+						fmt.Println("Failed to encode pong frame.")
+					}
+					err = Write(connection, pongFrameBytes)
+					if err != nil {
+						fmt.Println("Failed to write pong frame.")
+					}
+				case CLOSE_FRAME:
+					// if we recieve a close send one back
+					// TODO: make sure we are returning the correct status code
+					Close(connection)
+
+				default:
+					fmt.Println("Ignored recieved data. ")
+				}
 			}
 		}
 	}
@@ -111,19 +136,39 @@ func instantiateConnection(connection *Connection, conn net.Conn) error {
 }
 
 func Write(connection *Connection, data []byte) error {
-	//TODO: implement
-	return errors.New("Not implemented")
+	// TODO: look into the implications of partial writes
+	writtenBytes := 0
+	for writtenBytes < len(data) {
+		n, err := connection.conn.Write(data[writtenBytes:])
+		if err != nil {
+			return err
+		}
+		writtenBytes += n
+	}
+	return nil
+
 }
 
-func Close(connection *Connection, data []byte) error {
-	Write(connection, []byte{0x08})
+func Close(connection *Connection) error {
+	frm, err := newCloseFrame()
+	if err != nil {
+		return err
+	}
+	data, err := encodeFrame(frm)
+	if err != nil {
+		return err
+	}
+	err = Write(connection, data)
+	if err != nil {
+		return err
+	}
 	// Closing the channel will kill the workers
 	close(connection.incoming)
-	err := connection.conn.Close()
+	err = connection.conn.Close()
 	return err
 }
 
-func parseFrame(recievedData []byte) (frame, error) {
+func decodeFrame(recievedData []byte) (frame, error) {
 	if len(recievedData) < 2 {
 		return frame{}, fmt.Errorf("Not a valid frame, not enough bytes.")
 	}
