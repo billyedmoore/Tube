@@ -3,6 +3,7 @@ package websocket
 import (
 	"crypto/sha1"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"log"
@@ -45,13 +46,7 @@ func assert(conditional bool) {
 
 type Connection struct {
 	// no lock atm as channels are thread safe
-
-	// This is the interface for the connection.
-	// Applications can expect any incoming data to be written to the toBeRead
-	// channel and they can write bytes to toBeWritten channel and expect them
-	// to be sent to the client.
-	toBeRead    chan []byte
-	toBeWritten chan []byte
+	incoming chan []byte
 
 	conn net.Conn
 }
@@ -60,7 +55,7 @@ func readWorker(connection *Connection) {
 	buffer := make([]byte, 4096)
 	for {
 		select {
-		case <-connection.toBeRead:
+		case <-connection.incoming:
 			fmt.Println("Channel is closed stopping ReadWorker")
 			return
 		default:
@@ -68,29 +63,21 @@ func readWorker(connection *Connection) {
 			if err != nil {
 				data := make([]byte, n)
 				copy(data, buffer[:n])
-				//TODO: parse out the actual data from the meta (ie bytes vs strings)
-				connection.toBeRead <- data
+				//TODO: parse out the actual data frame
+				connection.incoming <- data
 			}
 		}
-	}
-}
-
-func writeWorker(connection *Connection) {
-	for data := range connection.toBeWritten {
-		Write(connection, data)
 	}
 }
 
 // New connection object or error (no errors yet)
 func newConnection(conn net.Conn) (*Connection, error) {
 	connection := &Connection{
-		toBeRead:    make(chan []byte),
-		toBeWritten: make(chan []byte),
-		conn:        conn}
+		incoming: make(chan []byte),
+		conn:     conn}
 
-	// handle Reads and Writes as they come in
+	// handle Reads data as it comes in
 	go readWorker(connection)
-	go writeWorker(connection)
 	return connection, nil
 }
 
@@ -101,10 +88,59 @@ func Write(connection *Connection, data []byte) error {
 
 func Close(connection *Connection, data []byte) error {
 	Write(connection, []byte{0x08})
-	close(connection.toBeRead)
-	close(connection.toBeWritten)
+	// Closing the channel will kill the workers
+	close(connection.incoming)
 	err := connection.conn.Close()
 	return err
+}
+
+type frame struct {
+	fin           bool
+	opcode        uint8
+	mask          bool
+	maskKey       uint32
+	payloadLength uint64
+	payload       []byte
+}
+
+func parseFrame(recievedData []byte) (frame, error) {
+	if len(recievedData) < 2 {
+		return frame{}, fmt.Errorf("Not a valid frame, not enough bytes.")
+	}
+
+	var fin bool = (recievedData[0] & 1) != 0
+	var opcode uint8 = (recievedData[0] << 4) & 0xF0
+	var mask bool = (recievedData[1] & 1) != 0
+	var payloadLength uint64 = uint64((recievedData[1] << 1) & 0xFE)
+	var maskKey uint32 = 0
+
+	nextByteIndex := 2
+
+	switch payloadLength {
+	case 126:
+		payloadLength = binary.BigEndian.Uint64(recievedData[nextByteIndex:(nextByteIndex + 2)])
+		nextByteIndex += 2
+	case 127:
+		payloadLength = binary.BigEndian.Uint64(recievedData[nextByteIndex:(nextByteIndex + 8)])
+		nextByteIndex += 8
+	}
+
+	if mask {
+		if len(recievedData[nextByteIndex:]) < 4 {
+			return frame{}, fmt.Errorf("Not a valid frame, not enough bytes (mask true but no mask key).")
+		}
+		maskKey = binary.BigEndian.Uint32(recievedData[nextByteIndex:(nextByteIndex + 4)])
+		nextByteIndex += 4
+	}
+	if uint64(len(recievedData[nextByteIndex:])) < payloadLength {
+		return frame{}, fmt.Errorf("Not a valid frame, not enough bytes (payload shorter than payload length).")
+	}
+	var payload = make([]byte, payloadLength)
+	copy(payload, recievedData[nextByteIndex:])
+
+	data := frame{fin: fin, opcode: opcode, mask: mask,
+		maskKey: maskKey, payloadLength: payloadLength, payload: payload}
+	return data, nil
 }
 
 // Upgrade from http -> websocket, hijacks the connection
