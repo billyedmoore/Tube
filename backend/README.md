@@ -36,6 +36,23 @@ func handler(w http.ResponseWriter, r *http.Request){
    // There was an error and the connection wasn't created
    // You can use w to send an error to the client
   }
+
+  // Read data from the websocket connection until it is closed
+  // the websocket library will ensure any incoming data (only binary data)
+  // is written to the incoming channel
+  go func() {
+	  for {
+		select {
+            case data, ok := <-connection.incoming:
+              if !ok {
+                // Channel close signals the connection has been closed.
+                return
+              }
+              // data is arbitrary bytes here we just print the hex
+              fmt.Println("Recieved :", hex.EncodeToString(data))
+        }
+    }
+  }()
   
   err = UpgradeConnection(w,r,connection)
 
@@ -44,17 +61,6 @@ func handler(w http.ResponseWriter, r *http.Request){
     // successfully Hijacked so you should still try to send an 
     // error over http. An effort may be made in future to ensure
     // client can still be notified if failure occurs later.
-  }
-  
-  for {
-    select {
-    case data, ok := <- connection.incoming:
-      if !ok {
-        // Channel closed, signals the connection has been closed.
-        return
-        }
-      fmt.Println("Recieved :" data)
-    }
   }
 }
 
