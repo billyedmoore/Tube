@@ -5,7 +5,7 @@ import (
 	"crypto/sha1"
 	"encoding/base64"
 	"encoding/binary"
-	"errors"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"net/http"
@@ -14,10 +14,11 @@ import (
 )
 
 type Connection struct {
-	lock         sync.Mutex
-	incoming     chan []byte
-	instantiated bool
-	conn         net.Conn
+	lock       sync.Mutex
+	incoming   chan []byte
+	connected  bool
+	statusCond *sync.Cond
+	conn       net.Conn
 }
 
 type frame struct {
@@ -61,9 +62,11 @@ func isValidChallengeKey(str string) bool {
 }
 
 func generateAcceptKey(challengeString string) string {
+	fmt.Println("\"" + challengeString + "\"")
 	// Specified in RFC 6455
-	guid := []byte("258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
-	data := sha1.Sum(append([]byte(challengeString), guid...))
+
+	str := challengeString + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+	data := sha1.Sum([]byte(str))
 	return base64.StdEncoding.EncodeToString(data[:])
 }
 
@@ -71,18 +74,24 @@ func readWorker(connection *Connection) {
 	buffer := make([]byte, 4096)
 	for {
 		select {
-		case <-connection.incoming:
-			fmt.Println("Channel is closed stopping ReadWorker")
-			return
+		case _, ok := <-connection.incoming:
+			if !ok {
+				fmt.Println("Channel is closed stopping ReadWorker")
+				return
+			}
 		default:
 			n, err := connection.conn.Read(buffer)
-			if err != nil {
+			if (err != nil) && (n != 0) {
 				data := make([]byte, n)
 				copy(data, buffer[:n])
 				frm, err := decodeFrame(data)
+
 				if err != nil {
-					fmt.Println("Failed to decode frame.")
+					fmt.Println(hex.EncodeToString(data))
+					fmt.Printf("Failed to decode frame. %e", err)
 				}
+
+				fmt.Printf("Frame recieved %v", frm.operation)
 				switch frm.operation {
 				case BINARY_FRAME:
 					connection.incoming <- frm.payload
@@ -102,6 +111,7 @@ func readWorker(connection *Connection) {
 				case CLOSE_FRAME:
 					// if we recieve a close send one back
 					// TODO: make sure we are returning the correct status code
+					fmt.Println("CLOSE_FRAME")
 					Close(connection)
 
 				default:
@@ -115,9 +125,11 @@ func readWorker(connection *Connection) {
 // New connection object or error (no errors yet)
 func CreateConnection() (*Connection, error) {
 	connection := &Connection{
-		incoming:     make(chan []byte),
-		instantiated: false,
+		incoming:  make(chan []byte),
+		connected: false,
 	}
+
+	connection.statusCond = sync.NewCond(&connection.lock)
 
 	return connection, nil
 }
@@ -126,7 +138,8 @@ func CreateConnection() (*Connection, error) {
 func instantiateConnection(connection *Connection, conn net.Conn) error {
 	connection.lock.Lock()
 	connection.conn = conn
-	connection.instantiated = true
+	connection.connected = true
+	connection.statusCond.Signal()
 	connection.lock.Unlock()
 
 	// Handle incoming messages as they come
@@ -137,6 +150,8 @@ func instantiateConnection(connection *Connection, conn net.Conn) error {
 
 func Write(connection *Connection, data []byte) error {
 	// TODO: look into the implications of partial writes
+
+	fmt.Printf("Writing %v bytes to connection data : %v\n", len(data), data)
 	writtenBytes := 0
 	for writtenBytes < len(data) {
 		n, err := connection.conn.Write(data[writtenBytes:])
@@ -164,6 +179,10 @@ func Close(connection *Connection) error {
 	}
 	// Closing the channel will kill the workers
 	close(connection.incoming)
+	connection.lock.Lock()
+	connection.connected = false
+	connection.statusCond.Signal()
+	connection.lock.Unlock()
 	err = connection.conn.Close()
 	return err
 }
@@ -311,13 +330,15 @@ func encodeFrame(data frame) ([]byte, error) {
 	}
 	var payloadBytes []byte
 
-	if data.mask {
+	if !data.mask {
 		payloadBytes = make([]byte, data.payloadLength)
 		copy(data.payload, payloadBytes)
 	} else {
 		var err error
 		payloadBytes, err = applyMask(data.maskKey, data.payload)
-		return nil, err
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var buffer bytes.Buffer
@@ -327,6 +348,7 @@ func encodeFrame(data frame) ([]byte, error) {
 	buffer.Write(maskKeyBytes)
 	buffer.Write(payloadBytes)
 
+	println("encodedFrame :", buffer.Bytes())
 	return buffer.Bytes(), nil
 
 }
@@ -334,6 +356,7 @@ func encodeFrame(data frame) ([]byte, error) {
 // Upgrade from http -> websocket, hijacks the connection if successful
 // We dont
 func UpgradeConnection(w http.ResponseWriter, r *http.Request, connection *Connection) error {
+	println("Upgrading the connection")
 
 	var challengeKey string = r.Header.Get("Sec-Websocket-Key")
 
@@ -369,12 +392,13 @@ func UpgradeConnection(w http.ResponseWriter, r *http.Request, connection *Conne
 	response := []string{
 		"HTTP/1.1 101 Switching Protocols",
 		"Upgrade: websocket",
-		"Connection : upgrade",
+		"Connection: Upgrade",
 		"Sec-WebSocket-Accept: " + generateAcceptKey(challengeKey),
 		"",
 		"",
 	}
 
+	fmt.Println(strings.Join(response, "\r\n"))
 	_, err = buffer.WriteString(strings.Join(response, "\r\n"))
 
 	//TODO: Consider if there is a way of handling these such that the client
@@ -390,5 +414,6 @@ func UpgradeConnection(w http.ResponseWriter, r *http.Request, connection *Conne
 	if err != nil {
 		return err
 	}
+	println("Upgraded the connection")
 	return nil
 }
