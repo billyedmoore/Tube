@@ -304,22 +304,25 @@ func encodeFrame(data frame) ([]byte, error) {
 	}
 
 	var op uint8 = uint8(data.operation)
-	var firstByte uint8 = (op >> 4) + fin
-	var secondByte uint8 = mask + (op >> 1)
+	var firstByte uint8 = op + (fin << 7)
 
 	var payloadLengthBytes []byte
+	var payloadLength7bit uint8
 
-	if data.payloadLength < 125 {
-		payloadLengthBytes = make([]byte, 1)
-		payloadLengthBytes[0] = uint8(data.payloadLength)
-	} else if data.payloadLength < 4294967295 {
-		payloadLengthBytes = make([]byte, 4)
-		binary.BigEndian.PutUint32(payloadLengthBytes, uint32(data.payloadLength))
+	if data.payloadLength <= 125 {
+		payloadLength7bit = uint8(data.payloadLength)
+		payloadLengthBytes = make([]byte, 0)
+	} else if data.payloadLength < 65535 {
+		payloadLength7bit = uint8(126)
+		payloadLengthBytes = make([]byte, 2)
+		binary.BigEndian.PutUint16(payloadLengthBytes, uint16(data.payloadLength))
 	} else {
+		payloadLength7bit = uint8(127)
 		payloadLengthBytes = make([]byte, 8)
 		binary.BigEndian.PutUint64(payloadLengthBytes, uint64(data.payloadLength))
 	}
 
+	var secondByte uint8 = (mask << 7) + payloadLength7bit
 	var maskKeyBytes []byte
 
 	if data.mask {
@@ -332,7 +335,7 @@ func encodeFrame(data frame) ([]byte, error) {
 
 	if !data.mask {
 		payloadBytes = make([]byte, data.payloadLength)
-		copy(data.payload, payloadBytes)
+		copy(payloadBytes, data.payload)
 	} else {
 		var err error
 		payloadBytes, err = applyMask(data.maskKey, data.payload)

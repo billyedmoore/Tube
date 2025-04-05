@@ -36,8 +36,19 @@ func testWebsocketConnectHandler(w http.ResponseWriter, r *http.Request) {
 			for !connection.connected {
 				connection.statusCond.Wait()
 			}
-			helloClientFrame := []byte{0x82, 0x0C, 0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x43, 0x6C, 0x69, 0x65, 0x6E, 0x74}
-			err = Write(connection, helloClientFrame)
+			frm, err := newBinaryFrame([]byte("Hello Client"))
+
+			if err != nil {
+				panic("Couldnt create binary frame for \"Hello client\"")
+			}
+
+			payload, err := encodeFrame(frm)
+
+			if err != nil {
+				panic("Couldnt encode binary frame for \"Hello client\"")
+			}
+
+			err = Write(connection, payload)
 
 			if err != nil {
 				panic("Couldnt write binary frame for \"Hello client\"")
