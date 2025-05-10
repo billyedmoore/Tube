@@ -192,10 +192,10 @@ func decodeFrame(recievedData []byte) (frame, error) {
 		return frame{}, fmt.Errorf("Not a valid frame, not enough bytes.")
 	}
 
-	var fin bool = (recievedData[0] & 1) != 0
-	var operation opcode = opcode((recievedData[0] << 4) & 0xF0)
-	var mask bool = (recievedData[1] & 1) != 0
-	var payloadLength uint64 = uint64((recievedData[1] << 1) & 0xFE)
+	var fin bool = (recievedData[0] & 0x80) != 0
+	var operation opcode = opcode((recievedData[0] & 0x0F))
+	var mask bool = (recievedData[1] & 0x80) != 0
+	var payloadLength uint64 = uint64((recievedData[1]) & 0x7F)
 	var maskKey uint32 = 0
 
 	nextByteIndex := 2
@@ -217,7 +217,10 @@ func decodeFrame(recievedData []byte) (frame, error) {
 		nextByteIndex += 4
 	}
 	if uint64(len(recievedData[nextByteIndex:])) < payloadLength {
-		return frame{}, fmt.Errorf("Not a valid frame, not enough bytes (payload shorter than payload length).")
+		err := fmt.Errorf(
+			"Not a valid frame, not enough bytes (payload length %v shorter than specified payload length %v).",
+			uint64(len(recievedData[nextByteIndex:])), payloadLength)
+		return frame{}, err
 	}
 	var payload []byte = make([]byte, payloadLength)
 	if mask {
