@@ -81,7 +81,7 @@ func readWorker(connection *Connection) {
 			}
 		default:
 			n, err := connection.conn.Read(buffer)
-			if (err != nil) && (n != 0) {
+			if (err == nil) && (n != 0) {
 				data := make([]byte, n)
 				copy(data, buffer[:n])
 				frm, err := decodeFrame(data)
@@ -271,11 +271,12 @@ func newCloseFrame() (frame, error) {
 	// normal closure
 	// TODO: select error code situationally
 	binary.BigEndian.PutUint16(code, 1000)
+	buffer.Write(code)
 	buffer.Write([]byte("Connection closed normally."))
 	payload := buffer.Bytes()
 
 	frm := frame{fin: true, operation: CLOSE_FRAME,
-		mask: false, payloadLength: uint64(len(payload)), payload: payload}
+		mask: true, payloadLength: uint64(len(payload)), payload: payload}
 
 	return frm, nil
 }
