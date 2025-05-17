@@ -5,7 +5,7 @@ on:
 
 jobs:
   frontend-build-and-test:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
     - name: Install pnpm
@@ -27,3 +27,25 @@ jobs:
     - name: Test
       working-directory: ./frontend
       run: pnpm test
+  backend-build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    # Used as a client for testing
+    - uses: denoland/setup-deno@v2
+      with:
+        deno-version: vx.x.x
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '>=1.24.0'
+    - name: Get dependencies
+      run: go mod tidy
+      working-directory: ./backend
+    - name: build
+      run: |
+        echo 'TODO: make buildable' # go build
+      working-directory: ./backend
+    - name: test
+      run: go test ./...
+      working-directory: ./backend
