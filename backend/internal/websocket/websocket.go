@@ -11,14 +11,18 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 )
 
 type Connection struct {
-	lock       sync.Mutex
-	incoming   chan []byte
-	connected  bool
-	statusCond *sync.Cond
-	conn       net.Conn
+	lock                          sync.Mutex
+	incoming                      chan []byte
+	connected                     bool
+	connectionStatusChangedSignal *sync.Cond
+	conn                          net.Conn
+	closing                       bool
+	closeRetryTime                time.Duration
+	closeGiveUpTime               time.Duration
 }
 
 type frame struct {
@@ -96,23 +100,16 @@ func readWorker(connection *Connection) {
 				case BINARY_FRAME:
 					connection.incoming <- frm.payload
 				case PING_FRAME:
-					pong, err := newPongFrame(frm.payload)
-					if err != nil {
-						fmt.Println("Failed to create pong frame.")
-					}
-					pongFrameBytes, err := encodeFrame(pong)
-					if err != nil {
-						fmt.Println("Failed to encode pong frame.")
-					}
-					err = Write(connection, pongFrameBytes)
-					if err != nil {
-						fmt.Println("Failed to write pong frame.")
-					}
+					sendPongFrame(connection, frm)
 				case CLOSE_FRAME:
-					// if we recieve a close send one back
-					// TODO: make sure we are returning the correct status code
 					fmt.Println("CLOSE_FRAME")
-					Close(connection)
+
+					if IsClosing(connection) {
+						closeServer(connection)
+					} else {
+						sendCloseFrame(connection)
+						closeServer(connection)
+					}
 
 				default:
 					fmt.Println("Ignored recieved data. ")
@@ -125,11 +122,13 @@ func readWorker(connection *Connection) {
 // New connection object or error (no errors yet)
 func CreateConnection() (*Connection, error) {
 	connection := &Connection{
-		incoming:  make(chan []byte),
-		connected: false,
+		incoming:        make(chan []byte),
+		connected:       false,
+		closeRetryTime:  time.Second * 2,
+		closeGiveUpTime: time.Second * 30,
 	}
 
-	connection.statusCond = sync.NewCond(&connection.lock)
+	connection.connectionStatusChangedSignal = sync.NewCond(&connection.lock)
 
 	return connection, nil
 }
@@ -137,10 +136,10 @@ func CreateConnection() (*Connection, error) {
 // Update the connection with the underlying connection
 func instantiateConnection(connection *Connection, conn net.Conn) error {
 	connection.lock.Lock()
+	defer connection.lock.Unlock()
 	connection.conn = conn
 	connection.connected = true
-	connection.statusCond.Signal()
-	connection.lock.Unlock()
+	connection.connectionStatusChangedSignal.Signal()
 
 	// Handle incoming messages as they come
 	go readWorker(connection)
@@ -148,9 +147,10 @@ func instantiateConnection(connection *Connection, conn net.Conn) error {
 	return nil
 }
 
-func Write(connection *Connection, data []byte) error {
+func write(connection *Connection, data []byte) error {
 	// TODO: look into the implications of partial writes
-
+	connection.lock.Lock()
+	defer connection.lock.Unlock()
 	fmt.Printf("Writing %v bytes to connection data : %v\n", len(data), data)
 	writtenBytes := 0
 	for writtenBytes < len(data) {
@@ -164,27 +164,16 @@ func Write(connection *Connection, data []byte) error {
 
 }
 
-func Close(connection *Connection) error {
-	frm, err := newCloseFrame()
-	if err != nil {
-		return err
-	}
-	data, err := encodeFrame(frm)
-	if err != nil {
-		return err
-	}
-	err = Write(connection, data)
-	if err != nil {
-		return err
-	}
+// Doesn't send any Close Frames should be used after close handshake is
+// complete
+func closeServer(connection *Connection) error {
 	// Closing the channel will kill the workers
 	close(connection.incoming)
 	connection.lock.Lock()
+	defer connection.lock.Unlock()
 	connection.connected = false
-	connection.statusCond.Signal()
-	connection.lock.Unlock()
-	err = connection.conn.Close()
-	return err
+	connection.connectionStatusChangedSignal.Signal()
+	return connection.conn.Close()
 }
 
 func decodeFrame(recievedData []byte) (frame, error) {
@@ -238,6 +227,152 @@ func decodeFrame(recievedData []byte) (frame, error) {
 	return data, nil
 }
 
+func SendBlobData(connection *Connection, data []byte) error {
+	if !IsConnected(connection) {
+		return fmt.Errorf("Connection not connected.")
+	}
+	if IsClosing(connection) {
+		return fmt.Errorf("Connection is closing.")
+	}
+
+	frm, err := newBinaryFrame(data)
+
+	if err != nil {
+		return fmt.Errorf("Couldn't create binary frame for data: %v.", data)
+	}
+
+	payload, err := encodeFrame(frm)
+
+	if err != nil {
+		return fmt.Errorf("Couldn't encode binary frame for data: %v.", data)
+	}
+
+	err = write(connection, payload)
+
+	if err != nil {
+		return fmt.Errorf("Couldn't write binary frame for data: %v.", data)
+	}
+
+	return nil
+}
+
+// This is the external class to allow the inititation of a close by external users
+// TODO: design such that if there are errors sending the close frame there is visibility
+func InitiateClose(connection *Connection) error {
+	fmt.Println("CLOSE INITATED")
+
+	if !IsConnected(connection) {
+		return fmt.Errorf("Connection not connected.")
+	}
+	if IsClosing(connection) {
+		return fmt.Errorf("Close already initiated.")
+	}
+
+	// Reattempts after "retryTime" and gives up and closes anyway after a further wait of
+	// "giveUpTime"
+	backgroundCloseFrameRetry := func() {
+		connection.lock.Lock()
+		retryTime := connection.closeRetryTime
+		giveUpTime := connection.closeGiveUpTime
+		connection.lock.Unlock()
+
+		time.Sleep(retryTime)
+		if IsConnected(connection) {
+			sendCloseFrame(connection)
+			// If after waiting give up time we haven't recieved a CloseFrame from the client close anyway
+			time.Sleep(giveUpTime)
+			if IsConnected(connection) {
+				closeServer(connection)
+			}
+		}
+
+	}
+
+	err := sendCloseFrame(connection)
+	if err != nil {
+		return err
+	}
+
+	go backgroundCloseFrameRetry()
+	return nil
+}
+
+func sendCloseFrame(connection *Connection) error {
+	fmt.Println("SENDING CLOSE FRAME")
+	if !IsConnected(connection) {
+		return fmt.Errorf("Connection not connected.")
+	}
+
+	frm, err := newCloseFrame()
+
+	if err != nil {
+		return fmt.Errorf("Couldn't create close frame.")
+	}
+
+	payload, err := encodeFrame(frm)
+
+	if err != nil {
+		return fmt.Errorf("Couldn't encode close frame %v.", frm)
+	}
+
+	err = write(connection, payload)
+
+	if err != nil {
+		return fmt.Errorf("Couldn't write frame %v.", frm)
+	}
+
+	connection.lock.Lock()
+	defer connection.lock.Unlock()
+	connection.closing = true
+
+	return nil
+}
+
+func sendPongFrame(connection *Connection, pingFrame frame) error {
+	if !IsConnected(connection) {
+		return fmt.Errorf("Connection not connected.")
+	}
+
+	pong, err := newPongFrame(pingFrame.payload)
+	if err != nil {
+		return fmt.Errorf("Failed to create pong frame.")
+	}
+	pongFrameBytes, err := encodeFrame(pong)
+	if err != nil {
+		return fmt.Errorf("Failed to encode pong frame %v.", pong)
+	}
+	err = write(connection, pongFrameBytes)
+	if err != nil {
+		fmt.Println("Failed to write pong frame.")
+		return fmt.Errorf("Failed to write ping frame %v encoded as %v.", pong, pongFrameBytes)
+	}
+	return nil
+}
+
+func sendPingFrame(connection *Connection, pingFrame frame) error {
+	if !IsConnected(connection) {
+		return fmt.Errorf("Connection not connected.")
+	}
+
+	if IsClosing(connection) {
+		return fmt.Errorf("Connection closing, can't ping.")
+	}
+
+	ping, err := newPingFrame()
+	if err != nil {
+		return fmt.Errorf("Failed to create ping frame.")
+	}
+	pingFrameBytes, err := encodeFrame(ping)
+	if err != nil {
+		return fmt.Errorf("Failed to encode ping frame %v.", ping)
+	}
+	err = write(connection, pingFrameBytes)
+	if err != nil {
+		return fmt.Errorf("Failed to write ping frame %v encoded as %v.", ping, pingFrameBytes)
+	}
+	return nil
+}
+
 func newBinaryFrame(data []byte) (frame, error) {
 	payload := make([]byte, len(data))
 	copy(payload, data)
@@ -268,8 +403,7 @@ func newCloseFrame() (frame, error) {
 	var buffer bytes.Buffer
 	code := make([]byte, 2)
 
-	// normal closure
-	// TODO: select error code situationally
+	// TODO: different error codes for different senarios
 	binary.BigEndian.PutUint16(code, 1000)
 	buffer.Write(code)
 	buffer.Write([]byte("Connection closed normally."))
@@ -358,6 +492,30 @@ func encodeFrame(data frame) ([]byte, error) {
 	println("encodedFrame :", buffer.Bytes())
 	return buffer.Bytes(), nil
 
+}
+
+// Do nothing just wait until the connection is connected
+func WaitUntilConnected(connection *Connection) {
+	connection.lock.Lock()
+	defer connection.lock.Unlock()
+	// wait for the connection to be connected
+	for !connection.connected {
+		connection.connectionStatusChangedSignal.Wait()
+	}
+}
+
+// Is the connection obj connected and ready to send data
+func IsConnected(connection *Connection) bool {
+	connection.lock.Lock()
+	defer connection.lock.Unlock()
+	return connection.connected
+}
+
+// Is the connection obj in the process of closing
+func IsClosing(connection *Connection) bool {
+	connection.lock.Lock()
+	defer connection.lock.Unlock()
+	return connection.closing
 }
 
 // Upgrade from http -> websocket, hijacks the connection if successful

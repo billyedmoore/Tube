@@ -30,31 +30,12 @@ func testWebsocketConnectHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func() {
-		connection.lock.Lock()
-
-		// wait for the connection to be connected
-		for !connection.connected {
-			connection.statusCond.Wait()
-		}
-		frm, err := newBinaryFrame([]byte("Hello Client"))
+		WaitUntilConnected(connection)
+		err := SendBlobData(connection, []byte("Hello Client"))
 
 		if err != nil {
-			panic("Couldnt create binary frame for \"Hello client\"")
+			panic(err)
 		}
-
-		payload, err := encodeFrame(frm)
-
-		if err != nil {
-			panic("Couldnt encode binary frame for \"Hello client\"")
-		}
-
-		err = Write(connection, payload)
-
-		if err != nil {
-			panic("Couldnt write binary frame for \"Hello client\"")
-		}
-
-		connection.lock.Unlock()
 
 		for {
 			select {
@@ -66,30 +47,12 @@ func testWebsocketConnectHandler(w http.ResponseWriter, r *http.Request) {
 
 				if bytes.Equal(val, []byte("Recieved")) {
 					//Close out the connection
-					fmt.Println("All good")
-					connection.lock.Lock()
-
-					frm, err := newCloseFrame()
-
-					if err != nil {
-						panic("Couldnt create close frame")
-					}
-
-					payload, err := encodeFrame(frm)
-
-					if err != nil {
-						panic("Couldnt encode close frame")
-					}
-
-					err = Write(connection, payload)
-
-					if err != nil {
-						panic("Couldnt write close frame")
-					}
-					connection.lock.Unlock()
+					fmt.Println("All good closing")
+					InitiateClose(connection)
 				}
 			}
 		}
+
 	}()
 
 	err = UpgradeConnection(w, r, connection)
