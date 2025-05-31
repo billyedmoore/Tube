@@ -26,6 +26,7 @@
 | opcode            | 1 byte    | 0x03  |
 | version           | 1 byte    | 0x00  |
 | client public key | 512 bytes |       |
+| share-code        | 5 bytes   |       |
 
 ### Recevier Accepted
 
@@ -68,5 +69,6 @@
 | opcode              | 1 byte  | 0x07  |
 | version             | 1 byte  | 0x00  |
 | chunk number (or metadata) | 2 bytes | chunk number if < 0xFF or metadata if 0xFF |
+
 
 
