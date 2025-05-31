@@ -15,8 +15,8 @@ import (
 )
 
 type Connection struct {
+	Incoming                      chan []byte
 	lock                          sync.Mutex
-	incoming                      chan []byte
 	connected                     bool
 	connectionStatusChangedSignal *sync.Cond
 	conn                          net.Conn
@@ -122,7 +122,7 @@ func readWorker(connection *Connection) {
 // New connection object or error (no errors yet)
 func CreateConnection() (*Connection, error) {
 	connection := &Connection{
-		incoming:        make(chan []byte),
+		incoming:        make(chan []byte, 64),
 		connected:       false,
 		closeRetryTime:  time.Second * 2,
 		closeGiveUpTime: time.Second * 30,
