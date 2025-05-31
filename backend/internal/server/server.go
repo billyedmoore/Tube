@@ -10,7 +10,7 @@ import (
 	"github.com/billyedmoore/tube/internal/websocket"
 )
 
-type share struct {
+type Share struct {
 	shareCode          [5]byte
 	senderConnection   *websocket.Connection
 	receiverConnection *websocket.Connection
@@ -18,8 +18,8 @@ type share struct {
 
 type globalContext struct {
 	lock                    sync.Mutex
-	activeShares            map[[5]byte]*share
-	sharesAwaitingReceivers map[[5]byte]*share
+	activeShares            map[[5]byte]*Share
+	sharesAwaitingReceivers map[[5]byte]*Share
 }
 
 type senderHandler struct {
@@ -101,10 +101,9 @@ func (h receiverHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Websocket failed to upgrade.", http.StatusInternalServerError)
 		return
 	}
-
 }
 
-func createShare(senderConnection *websocket.Connection, context *globalContext) (*share, error) {
+func createShare(senderConnection *websocket.Connection, context *globalContext) (*Share, error) {
 	receiverConnection, err := websocket.CreateConnection()
 
 	if err != nil {
@@ -131,12 +130,34 @@ func createShare(senderConnection *websocket.Connection, context *globalContext)
 		}
 	}
 
-	newShare := &share{
+	newShare := &Share{
 		shareCode:          shareCode,
 		senderConnection:   senderConnection,
 		receiverConnection: receiverConnection,
 	}
 
-	// here we should spin up a go routine to handle the actual sharing
+	go facilitateShare(newShare)
+
 	return newShare, nil
+}
+
+func facilitateShare(share *Share) {
+	senderInitiation := <-share.senderConnection.Incoming
+	// TODO: Decode senderInitiation
+	// TODO: Encode and send senderAcceptance to sender
+	recieverInitiation := <-share.receiverConnection.Incoming
+	// TODO: Decode recieverInitiation
+	// TODO: Encode and send recieverAcceptance
+
+	// TODO: Encode and send Ready to sender
+	metaData := <-share.senderConnection.Incoming
+	// TODO: Decode MetaData (To get number of chunks)
+	// TODO: Forward MetaData
+
+	// for i: = 0; i<n; i++{
+	// TODO: Forward Chunk
+	// TODO: Forward Chunk Ack
+	//}
+	//TODO: Close and update the context
+
 }
