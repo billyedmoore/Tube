@@ -39,7 +39,7 @@ func testWebsocketConnectHandler(w http.ResponseWriter, r *http.Request) {
 
 		for {
 			select {
-			case val, ok := <-connection.incoming:
+			case val, ok := <-connection.Incoming:
 				// channel has been closed
 				if !ok {
 					return
