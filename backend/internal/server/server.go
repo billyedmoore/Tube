@@ -151,12 +151,15 @@ func createShare(senderConnection *websocket.Connection, context *globalContext)
 	}
 
 	// start the go-routine that will handle the share
-	// go facilitateShare(newShare)
+	go facilitateShare(newShare, context)
 
 	return newShare, nil
 }
 
-func facilitateShare(share *Share) {
+func facilitateShare(share *Share, context *globalContext) {
+	// TODO: refactor this into smaller functions
+	// TODO: implement the many Unimplemented edgecases
+
 	websocket.WaitUntilConnected(share.senderConnection)
 	senderInitiation := <-share.senderConnection.Incoming
 	err := decodeSenderInitiation(senderInitiation)
@@ -185,8 +188,7 @@ func facilitateShare(share *Share) {
 	websocket.WaitUntilConnected(share.receiverConnection)
 	recieverInitiation := <-share.receiverConnection.Incoming
 
-	// _ is client_public_key, will be need to encode Ready message
-	_, err = decodeReceiverInitiation(recieverInitiation)
+	recieverPublicKey, err := decodeReceiverInitiation(recieverInitiation)
 
 	if err != nil {
 		panic("Un-implmented edgecase")
@@ -203,55 +205,96 @@ func facilitateShare(share *Share) {
 		panic("Unimplmented edgecase")
 	}
 
-	// TODO: Encode and send Ready to sender
+	ready, err := encodeReady(recieverPublicKey)
+	err = websocket.SendBlobData(share.senderConnection, ready)
 
-	metaData := <-share.senderConnection.Incoming
-	number_of_chunks, err := decodeMetadata(metaData)
+	if err != nil {
+		// close the share
+		// communicate with sender
+		// clean up
+		panic("Unimplmented edgecase")
+	}
 
-	// TODO: Forward MetaData
+	meta := <-share.senderConnection.Incoming
+	numberOfChunks, err := decodeMetadata(meta)
+
+	err = websocket.SendBlobData(share.receiverConnection, meta)
+
+	if err != nil {
+		// close the share
+		// communicate with sender
+		// clean up
+		panic("Unimplmented edgecase")
+	}
 
 	metaDataAck := <-share.receiverConnection.Incoming
-	chunk_number, err := decodeAcknowledge(metaDataAck)
+	chunkNumber, err := decodeAcknowledge(metaDataAck)
 
 	if err != nil {
 		panic("Un-implmented edgecase")
 		// close the share and clean up
 	}
 
-	if chunk_number != 0xFF {
+	if chunkNumber != 0xFF {
 		panic("Un-implmented edgecase")
 		// close the share and clean up
 	}
 
-	//TODO: Forward MetaData Ack
+	err = websocket.SendBlobData(share.senderConnection, metaDataAck)
 
-	for i := uint16(0); i <= number_of_chunks; i++ {
+	if err != nil {
+		// close the share
+		// communicate with sender
+		// clean up
+		panic("Unimplmented edgecase")
+	}
+
+	for i := uint16(0); i <= numberOfChunks; i++ {
 		chunk := <-share.senderConnection.Incoming
 
-		chunk_number, err = decodeDataChunk(chunk)
+		chunkNumber, err = decodeDataChunk(chunk)
 
-		if err != nil || chunk_number != i {
+		if err != nil || chunkNumber != i {
 			// Failed to decode data chunk or mismatched state bettween client and server
 			// Probably send some sort of error to the clients
 			panic("Un-implmented edgecase")
 		}
 
-		//TODO: Forward dataChunk
+		err = websocket.SendBlobData(share.receiverConnection, chunk)
+
+		if err != nil {
+			// close the share
+			// communicate with sender
+			// clean up
+			panic("Unimplmented edgecase")
+		}
 
 		metaDataAck := <-share.receiverConnection.Incoming
-		chunk_number, err := decodeAcknowledge(metaDataAck)
+		chunkNumber, err := decodeAcknowledge(metaDataAck)
 
-		if err != nil || chunk_number != i {
+		if err != nil || chunkNumber != i {
 			// Failed to decode data chunk or mismatched state bettween client and server
 			// Probably send some sort of error to the clients
 			panic("Un-implmented edgecase")
 		}
 
-		//TODO: Forward acknowledgement
+		err = websocket.SendBlobData(share.senderConnection, metaDataAck)
 
-		//Once server recieves the forwarded ack we can move on to the next chunk
+		if err != nil {
+			// close the share
+			// communicate with sender
+			// clean up
+			panic("Unimplmented edgecase")
+		}
 
 	}
-	//TODO: Close and update the context
 
+	websocket.InitiateClose(share.senderConnection)
+	websocket.InitiateClose(share.receiverConnection)
+
+	context.lock.Lock()
+	defer context.lock.Unlock()
+	// delete the last reference to the share
+	// effectively this is the free() point
+	delete(context.activeShares, share.shareCode)
 }

@@ -23,3 +23,19 @@ func encodeSenderAcceptance(share_code []byte) ([]byte, error) {
 func encodeRecieverAcceptance() []byte {
 	return commonEncoding(RECIEVER_ACCEPTED, 0)
 }
+
+func encodeReady(pub_key []byte) ([]byte, error) {
+	pub_key_length := 512
+	actual_pub_key_length := len(pub_key)
+	if actual_pub_key_length != pub_key_length {
+		err := fmt.Errorf("Public key should be %d bytes is actually %d.",
+			pub_key_length, actual_pub_key_length)
+		return nil, err
+	}
+
+	blob := commonEncoding(READY, 0)
+
+	blob = append(blob, pub_key...)
+
+	return blob, nil
+}
