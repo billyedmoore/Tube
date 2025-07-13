@@ -150,7 +150,9 @@ func createShare(senderConnection *websocket.Connection, context *globalContext)
 		receiverConnection: receiverConnection,
 	}
 
-	// here we should spin up a go routine to handle the actual sharing
+	// start the go-routine that will handle the share
+	// go facilitateShare(newShare)
+
 	return newShare, nil
 }
 
@@ -190,7 +192,16 @@ func facilitateShare(share *Share) {
 		panic("Un-implmented edgecase")
 		// close the share and clean up
 	}
-	// TODO: Encode and send recieverAcceptance
+
+	recieverAcceptance := encodeRecieverAcceptance()
+	err = websocket.SendBlobData(share.receiverConnection, recieverAcceptance)
+
+	if err != nil {
+		// close the share
+		// communicate with sender
+		// clean up
+		panic("Unimplmented edgecase")
+	}
 
 	// TODO: Encode and send Ready to sender
 
