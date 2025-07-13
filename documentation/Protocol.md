@@ -1,5 +1,9 @@
 # The Tube Message Protocol (Version 0)
 
++ All fields are little endian.
++ Extra bytes after expected number of bytes will be ignored.
+
+
 ![Sequence diagram for a tube file share.](./MessageSequenceDiagram.png)
 
 ## Message Types
@@ -26,7 +30,6 @@
 | opcode            | 1 byte    | 0x03  |
 | version           | 1 byte    | 0x00  |
 | client public key | 512 bytes |       |
-| share-code        | 5 bytes   |       |
 
 ### Recevier Accepted
 
@@ -59,6 +62,7 @@
 | ------------------- | ------- | ----- |
 | opcode              | 1 byte  | 0x07  |
 | version             | 1 byte  | 0x00  |
+| chunk number        | 2 bytes | chunk number (0x00 -> 0xFE)|
 | payload length      | 2 bytes | `n`   |
 | payload (encrypted) | `n` bytes |     |
 
@@ -66,7 +70,7 @@
 
 | Component           | Length  | Value |
 | ------------------- | ------- | ----- |
-| opcode              | 1 byte  | 0x07  |
+| opcode              | 1 byte  | 0x08  |
 | version             | 1 byte  | 0x00  |
 | chunk number (or metadata) | 2 bytes | chunk number if < 0xFF or metadata if 0xFF |
 
