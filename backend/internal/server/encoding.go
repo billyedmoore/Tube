@@ -20,3 +20,6 @@ func encodeSenderAcceptance(share_code []byte) ([]byte, error) {
 	return blob, nil
 }
 
+func encodeRecieverAcceptance() []byte {
+	return commonEncoding(RECIEVER_ACCEPTED, 0)
+}
