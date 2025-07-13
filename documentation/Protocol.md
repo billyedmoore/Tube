@@ -2,7 +2,7 @@
 
 + All fields are little endian.
 + Extra bytes after expected number of bytes will be ignored.
-
++ Opcode and version bytes are included in all messages.
 
 ![Sequence diagram for a tube file share.](./MessageSequenceDiagram.png)
 
