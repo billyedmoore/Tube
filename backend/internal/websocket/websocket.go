@@ -78,7 +78,7 @@ func readWorker(connection *Connection) {
 	buffer := make([]byte, 4096)
 	for {
 		select {
-		case _, ok := <-connection.incoming:
+		case _, ok := <-connection.Incoming:
 			if !ok {
 				fmt.Println("Channel is closed stopping ReadWorker")
 				return
@@ -98,7 +98,7 @@ func readWorker(connection *Connection) {
 				fmt.Printf("Frame recieved %v", frm.operation)
 				switch frm.operation {
 				case BINARY_FRAME:
-					connection.incoming <- frm.payload
+					connection.Incoming <- frm.payload
 				case PING_FRAME:
 					sendPongFrame(connection, frm)
 				case CLOSE_FRAME:
@@ -122,7 +122,7 @@ func readWorker(connection *Connection) {
 // New connection object or error (no errors yet)
 func CreateConnection() (*Connection, error) {
 	connection := &Connection{
-		incoming:        make(chan []byte, 64),
+		Incoming:        make(chan []byte, 64),
 		connected:       false,
 		closeRetryTime:  time.Second * 2,
 		closeGiveUpTime: time.Second * 30,
@@ -168,7 +168,7 @@ func write(connection *Connection, data []byte) error {
 // complete
 func closeServer(connection *Connection) error {
 	// Closing the channel will kill the workers
-	close(connection.incoming)
+	close(connection.Incoming)
 	connection.lock.Lock()
 	defer connection.lock.Unlock()
 	connection.connected = false
