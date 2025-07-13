@@ -73,10 +73,10 @@ func (h senderHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func isValidShareCode(shareCode string) (bool, string) {
 	if len(shareCode) == 0 {
-		return false, "share_code parameter is not set or is set to \"\"."
+		return false, "shareCode parameter is not set or is set to \"\"."
 	}
 	if len(shareCode) > 8 {
-		return false, "Provided share_code is too long to be a valid share code."
+		return false, "Provided shareCode is too long to be a valid share code."
 	}
 	return true, ""
 }
@@ -94,7 +94,7 @@ func (h receiverHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	shareCodeSlice, err := base64.StdEncoding.DecodeString(encodedShareCode)
 
 	if err != nil {
-		http.Error(w, "Provided share_code could not be decoded.", http.StatusBadRequest)
+		http.Error(w, "Provided shareCode could not be decoded.", http.StatusBadRequest)
 		return
 	}
 

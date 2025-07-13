@@ -5,8 +5,8 @@ import (
 	"fmt"
 )
 
-func assertVersion(version uint8, expected_version uint8) error {
-	if version != expected_version {
+func assertVersion(version uint8, expectedVersion uint8) error {
+	if version != expectedVersion {
 		return fmt.Errorf("Protocol version {%v} is not supported", version)
 	}
 	return nil
@@ -20,8 +20,8 @@ func commonDecoding(blob []byte) (opcode, uint8, []byte, error) {
 		return 0, 0, nil, fmt.Errorf("No version byte provided")
 	}
 
-	highest_opcode := uint8(8)
-	if uint8(blob[0]) > highest_opcode {
+	highestOpcode := uint8(8)
+	if uint8(blob[0]) > highestOpcode {
 		return 0, 0, nil, fmt.Errorf("Invalid opcode provided")
 	}
 	return opcode(blob[0]), blob[1], blob[2:], nil
@@ -46,7 +46,7 @@ func decodeSenderInitiation(blob []byte) error {
 
 // Takes a recieved blob and returns (client_public_key, error)
 func decodeReceiverInitiation(blob []byte) ([]byte, error) {
-	op, ver, remaining_blob, err := commonDecoding(blob)
+	op, ver, remainingBlob, err := commonDecoding(blob)
 
 	if err != nil {
 		return nil, err
@@ -62,19 +62,19 @@ func decodeReceiverInitiation(blob []byte) ([]byte, error) {
 		return nil, fmt.Errorf("Message is not a RECEIVER_INITIATION is a {%v}", opcode(op))
 	}
 
-	public_key_length := 512
-	if len(remaining_blob) < public_key_length {
-		return nil, fmt.Errorf("Too few bytes (expected %v got %v)).", public_key_length, len(remaining_blob))
+	publicKeyLength := 512
+	if len(remainingBlob) < publicKeyLength {
+		return nil, fmt.Errorf("Too few bytes (expected %v got %v)).", publicKeyLength, len(remainingBlob))
 	}
 
-	var public_key []byte = remaining_blob[:512]
+	var public_key []byte = remainingBlob[:512]
 
 	return public_key, nil
 }
 
 // Takes a recieved blob and returns (number_of_chunks, error)
 func decodeMetadata(blob []byte) (uint16, error) {
-	op, ver, remaining_blob, err := commonDecoding(blob)
+	op, ver, remainingBlob, err := commonDecoding(blob)
 
 	if err != nil {
 		return 0, err
@@ -90,30 +90,30 @@ func decodeMetadata(blob []byte) (uint16, error) {
 		return 0, fmt.Errorf("Message is not a METADATA is a %v", opcode(op))
 	}
 
-	if len(remaining_blob) == 0 {
+	if len(remainingBlob) == 0 {
 		return 0, fmt.Errorf("Incomplete message.")
 	}
 
-	filename_length := remaining_blob[0]
+	filenameLength := remainingBlob[0]
 
-	if len(remaining_blob) < 1 || filename_length == 0 {
+	if len(remainingBlob) < 1 || filenameLength == 0 {
 		return 0, fmt.Errorf("file_name length must be at least 1 byte.")
 	}
 
-	min_numb_bytes := 1 + int(filename_length) + 2
+	minNumberOfBytes := 1 + int(filenameLength) + 2
 
-	if len(remaining_blob) < (min_numb_bytes) {
-		return 0, fmt.Errorf("Too few bytes (expected %v got %v)).", len(remaining_blob), min_numb_bytes)
+	if len(remainingBlob) < (minNumberOfBytes) {
+		return 0, fmt.Errorf("Too few bytes (expected %v got %v)).", len(remainingBlob), minNumberOfBytes)
 	}
 
-	number_of_chunks_i := remaining_blob[1+int(filename_length):]
+	number_of_chunks_i := remainingBlob[1+int(filenameLength):]
 
 	return binary.LittleEndian.Uint16(number_of_chunks_i), nil
 }
 
 // Takes a recieved blob and returns (chunk_number, error)
 func decodeDataChunk(blob []byte) (uint16, error) {
-	op, ver, remaining_blob, err := commonDecoding(blob)
+	op, ver, remainingBlob, err := commonDecoding(blob)
 
 	if err != nil {
 		return 0, err
@@ -129,26 +129,26 @@ func decodeDataChunk(blob []byte) (uint16, error) {
 		return 0, fmt.Errorf("Message is not a DATA_CHUNK is a %v.", opcode(op))
 	}
 
-	if len(remaining_blob) < 4 {
+	if len(remainingBlob) < 4 {
 		return 0, fmt.Errorf("Incomplete message.")
 	}
 
-	chunk_number_bytes := remaining_blob[:2]
-	payload_length_bytes := remaining_blob[2:4]
+	chunkNumberBytes := remainingBlob[:2]
+	payloadLengthBytes := remainingBlob[2:4]
 
-	if len(remaining_blob[4:]) < int(binary.LittleEndian.Uint16(payload_length_bytes)) {
+	if len(remainingBlob[4:]) < int(binary.LittleEndian.Uint16(payloadLengthBytes)) {
 		return 0, fmt.Errorf("Incomplete message.")
 	}
 
-	chunk_number := binary.LittleEndian.Uint16(chunk_number_bytes)
+	chunkNumber := binary.LittleEndian.Uint16(chunkNumberBytes)
 
-	return chunk_number, nil
+	return chunkNumber, nil
 }
 
 // Takes a recieved blob and returns (chunk_number, error)
 // Chunk number of 0xFF means metadata
 func decodeAcknowledge(blob []byte) (uint16, error) {
-	op, ver, remaining_blob, err := commonDecoding(blob)
+	op, ver, remainingBlob, err := commonDecoding(blob)
 
 	if err != nil {
 		return 0, err
@@ -164,13 +164,13 @@ func decodeAcknowledge(blob []byte) (uint16, error) {
 		return 0, fmt.Errorf("Message is not a DATA_CHUNK is a %v.", opcode(op))
 	}
 
-	if len(remaining_blob) < 2 {
+	if len(remainingBlob) < 2 {
 		return 0, fmt.Errorf("Incomplete message.")
 	}
 
-	chunk_number_bytes := remaining_blob[:2]
+	chunkNumberBytes := remainingBlob[:2]
 
-	chunk_number := binary.LittleEndian.Uint16(chunk_number_bytes)
+	chunkNumber := binary.LittleEndian.Uint16(chunkNumberBytes)
 
-	return chunk_number, nil
+	return chunkNumber, nil
 }
