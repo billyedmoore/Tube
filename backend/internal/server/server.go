@@ -155,6 +155,7 @@ func createShare(senderConnection *websocket.Connection, context *globalContext)
 }
 
 func facilitateShare(share *Share) {
+	websocket.WaitUntilConnected(share.senderConnection)
 	senderInitiation := <-share.senderConnection.Incoming
 	err := decodeSenderInitiation(senderInitiation)
 
@@ -162,8 +163,24 @@ func facilitateShare(share *Share) {
 		panic("Unimplmented edgecase")
 		// close the share and clean up
 	}
-	// TODO: Encode and send senderAcceptance to sender
 
+	senderAcceptance, err := encodeSenderAcceptance(share.shareCode[:])
+
+	if err != nil {
+		panic("Unimplmented edgecase")
+		// close the share and clean up
+	}
+
+	err = websocket.SendBlobData(share.senderConnection, senderAcceptance)
+
+	if err != nil {
+		// close the share
+		// communicate with client
+		// clean up
+		panic("Unimplmented edgecase")
+	}
+
+	websocket.WaitUntilConnected(share.receiverConnection)
 	recieverInitiation := <-share.receiverConnection.Incoming
 
 	// _ is client_public_key, will be need to encode Ready message
