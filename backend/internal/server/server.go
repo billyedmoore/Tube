@@ -10,6 +10,19 @@ import (
 	"github.com/billyedmoore/tube/internal/websocket"
 )
 
+type opcode uint8
+
+const (
+	SENDER_INITIATION   opcode = 0x1
+	SENDER_ACCEPTED     opcode = 0x2
+	RECEIVER_INITIATION opcode = 0x3
+	RECIEVER_ACCEPTED   opcode = 0x4
+	READY               opcode = 0x5
+	METADATA            opcode = 0x6
+	DATA_CHUNK          opcode = 0x7
+	AWKNOWLEDGE         opcode = 0x8
+)
+
 type Share struct {
 	shareCode          [5]byte
 	senderConnection   *websocket.Connection
@@ -101,6 +114,7 @@ func (h receiverHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Websocket failed to upgrade.", http.StatusInternalServerError)
 		return
 	}
+
 }
 
 func createShare(senderConnection *websocket.Connection, context *globalContext) (*Share, error) {
@@ -136,28 +150,80 @@ func createShare(senderConnection *websocket.Connection, context *globalContext)
 		receiverConnection: receiverConnection,
 	}
 
-	go facilitateShare(newShare)
-
+	// here we should spin up a go routine to handle the actual sharing
 	return newShare, nil
 }
 
 func facilitateShare(share *Share) {
 	senderInitiation := <-share.senderConnection.Incoming
-	// TODO: Decode senderInitiation
+	err := decodeSenderInitiation(senderInitiation)
+
+	if err != nil {
+		panic("Unimplmented edgecase")
+		// close the share and clean up
+	}
 	// TODO: Encode and send senderAcceptance to sender
+
 	recieverInitiation := <-share.receiverConnection.Incoming
-	// TODO: Decode recieverInitiation
+
+	// _ is client_public_key, will be need to encode Ready message
+	_, err = decodeReceiverInitiation(recieverInitiation)
+
+	if err != nil {
+		panic("Un-implmented edgecase")
+		// close the share and clean up
+	}
 	// TODO: Encode and send recieverAcceptance
 
 	// TODO: Encode and send Ready to sender
+
 	metaData := <-share.senderConnection.Incoming
-	// TODO: Decode MetaData (To get number of chunks)
+	number_of_chunks, err := decodeMetadata(metaData)
+
 	// TODO: Forward MetaData
 
-	// for i: = 0; i<n; i++{
-	// TODO: Forward Chunk
-	// TODO: Forward Chunk Ack
-	//}
+	metaDataAck := <-share.receiverConnection.Incoming
+	chunk_number, err := decodeAcknowledge(metaDataAck)
+
+	if err != nil {
+		panic("Un-implmented edgecase")
+		// close the share and clean up
+	}
+
+	if chunk_number != 0xFF {
+		panic("Un-implmented edgecase")
+		// close the share and clean up
+	}
+
+	//TODO: Forward MetaData Ack
+
+	for i := uint16(0); i <= number_of_chunks; i++ {
+		chunk := <-share.senderConnection.Incoming
+
+		chunk_number, err = decodeDataChunk(chunk)
+
+		if err != nil || chunk_number != i {
+			// Failed to decode data chunk or mismatched state bettween client and server
+			// Probably send some sort of error to the clients
+			panic("Un-implmented edgecase")
+		}
+
+		//TODO: Forward dataChunk
+
+		metaDataAck := <-share.receiverConnection.Incoming
+		chunk_number, err := decodeAcknowledge(metaDataAck)
+
+		if err != nil || chunk_number != i {
+			// Failed to decode data chunk or mismatched state bettween client and server
+			// Probably send some sort of error to the clients
+			panic("Un-implmented edgecase")
+		}
+
+		//TODO: Forward acknowledgement
+
+		//Once server recieves the forwarded ack we can move on to the next chunk
+
+	}
 	//TODO: Close and update the context
 
 }
