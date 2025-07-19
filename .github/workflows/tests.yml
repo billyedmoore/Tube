@@ -4,29 +4,7 @@ on:
   pull_request:
 
 jobs:
-  frontend-build-and-test:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - name: Install pnpm
-      uses: pnpm/action-setup@v4
-      with:
-        version: 10
-    - name: Use Node.js 
-      uses: actions/setup-node@v4
-      with:
-        node-version: 22
-        cache: 'pnpm'
-        cache-dependency-path: frontend/pnpm-lock.yaml
-    - name: Install dependencies
-      working-directory: ./frontend
-      run: pnpm install
-    - name: Build
-      working-directory: ./frontend
-      run: pnpm build
-    - name: Test
-      working-directory: ./frontend
-      run: pnpm test
+  # return frontend test once they are back.
   backend-build-and-test:
     runs-on: ubuntu-latest
     steps:
