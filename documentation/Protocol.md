@@ -74,5 +74,12 @@
 | version             | 1 byte  | 0x00  |
 | chunk number (or metadata) | 2 bytes | chunk number if < 0xFF or metadata if 0xFF |
 
+### Error
 
+| Component           | Length  | Value |
+| ------------------- | ------- | ----- |
+| opcode              | 1 byte  | 0x09  |
+| version             | 1 byte  | 0x00  |
+| error string length | 2 bytes | `n`   |
+| error               | utf-8 encoded error string of`n` bytes |  |
 
