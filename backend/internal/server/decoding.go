@@ -20,8 +20,7 @@ func commonDecoding(blob []byte) (opcode, uint8, []byte, error) {
 		return 0, 0, nil, fmt.Errorf("No version byte provided")
 	}
 
-	highestOpcode := uint8(8)
-	if uint8(blob[0]) > highestOpcode {
+	if uint8(blob[0]) > highestOpCode {
 		return 0, 0, nil, fmt.Errorf("Invalid opcode provided")
 	}
 	return opcode(blob[0]), blob[1], blob[2:], nil

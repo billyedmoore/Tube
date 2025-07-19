@@ -1,16 +1,39 @@
 package server
 
-import "fmt"
+import (
+	"encoding/binary"
+	"fmt"
+)
 
 func commonEncoding(op opcode, version uint8) []byte {
 	return []byte{uint8(op), version}
 }
 
+func encodeError(errorReason string) ([]byte, error) {
+	blob := commonEncoding(ERROR, 0)
+
+	maxValue := 65536 // 2^16
+
+	length := len(errorReason)
+
+	if length > maxValue {
+		return nil, fmt.Errorf("Argument `errorReason` must be less than 2^16 characters in length.")
+	}
+
+	lengthBytes := make([]byte, 2)
+	binary.LittleEndian.PutUint16(lengthBytes, uint16(length))
+
+	blob = append(blob, lengthBytes...)
+	blob = append(blob, []byte(errorReason)...)
+
+	return blob, nil
+}
+
 func encodeSenderAcceptance(shareCode []byte) ([]byte, error) {
-	shareCodeLength := 5
-	if len(shareCode) != shareCodeLength {
+	expectedShareCodeLength := 5
+	if len(shareCode) != expectedShareCodeLength {
 		return nil, fmt.Errorf("Argument `share_code` should be of length %d is actually of length %d.",
-			shareCodeLength, len(shareCode))
+			expectedShareCodeLength, len(shareCode))
 	}
 
 	blob := commonEncoding(SENDER_ACCEPTED, 0)

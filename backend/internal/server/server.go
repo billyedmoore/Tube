@@ -12,6 +12,8 @@ import (
 
 type opcode uint8
 
+const highestOpCode = 0x9
+
 const (
 	SENDER_INITIATION   opcode = 0x1
 	SENDER_ACCEPTED     opcode = 0x2
@@ -21,6 +23,7 @@ const (
 	METADATA            opcode = 0x6
 	DATA_CHUNK          opcode = 0x7
 	AWKNOWLEDGE         opcode = 0x8
+	ERROR               opcode = 0x9
 )
 
 type Share struct {
@@ -154,6 +157,43 @@ func createShare(senderConnection *websocket.Connection, context *globalContext)
 	go facilitateShare(newShare, context)
 
 	return newShare, nil
+}
+
+func errorOutShare(share *Share, context *globalContext, errorReason string) {
+	const maxLength = 65535
+
+	if len(errorReason) > maxLength {
+		errorReason = errorReason[:maxLength]
+	}
+
+	errorEncoded, err := encodeError(errorReason)
+
+	if err != nil {
+		// encodeError only returns an error for input too long
+		// since this case has been handled this should never happen
+		panic("ErrorReason should not be too long but is.")
+	}
+
+	if websocket.IsConnected(share.senderConnection) {
+		err = websocket.SendBlobData(share.senderConnection, errorEncoded)
+		if err != nil {
+			// failed to send error to sender
+		}
+	}
+	if websocket.IsConnected(share.receiverConnection) {
+		err = websocket.SendBlobData(share.senderConnection, errorEncoded)
+		if err != nil {
+			// failed to send error to reciever
+		}
+	}
+	websocket.InitiateClose(share.senderConnection)
+	websocket.InitiateClose(share.receiverConnection)
+
+	context.lock.Lock()
+	defer context.lock.Unlock()
+	// delete the last reference to the share
+	// effectively this is the free() point
+	delete(context.activeShares, share.shareCode)
 }
 
 func facilitateShare(share *Share, context *globalContext) {
