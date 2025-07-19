@@ -1,5 +1,7 @@
 # Tube
 
+![Tube Logo](logo.svg)
+
 The internet is a [series of tubes](https://en.wikipedia.org/wiki/Series_of_tubes).
 
 Tube will give you your very own encrypted tube to send files from one browser to another.
