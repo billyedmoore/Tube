@@ -159,8 +159,8 @@ func decodeAcknowledge(blob []byte) (uint16, error) {
 		return 0, err
 	}
 
-	if op != DATA_CHUNK {
-		return 0, fmt.Errorf("Message is not a DATA_CHUNK is a %v.", opcode(op))
+	if op != ACKNOWLEDGE {
+		return 0, fmt.Errorf("Message is not a ACKNOWLEDGE is a %v.", opcode(op))
 	}
 
 	if len(remainingBlob) < 2 {

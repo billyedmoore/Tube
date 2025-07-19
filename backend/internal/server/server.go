@@ -18,11 +18,11 @@ const (
 	SENDER_INITIATION   opcode = 0x1
 	SENDER_ACCEPTED     opcode = 0x2
 	RECEIVER_INITIATION opcode = 0x3
-	RECIEVER_ACCEPTED   opcode = 0x4
+	RECEIVER_ACCEPTED   opcode = 0x4
 	READY               opcode = 0x5
 	METADATA            opcode = 0x6
 	DATA_CHUNK          opcode = 0x7
-	AWKNOWLEDGE         opcode = 0x8
+	ACKNOWLEDGE         opcode = 0x8
 	ERROR               opcode = 0x9
 )
 
@@ -50,7 +50,7 @@ func (h senderHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	connection, err := websocket.CreateConnection()
 
 	if err != nil {
-		http.Error(w, "Interal server error.", http.StatusInternalServerError)
+		http.Error(w, "Internal server error.", http.StatusInternalServerError)
 		return
 	}
 
@@ -109,7 +109,6 @@ func (h receiverHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	share := h.context.sharesAwaitingReceivers[shareCode]
 	delete(h.context.sharesAwaitingReceivers, shareCode)
 	h.context.activeShares[shareCode] = share
-	h.context.lock.Unlock()
 
 	err = websocket.UpgradeConnection(w, r, share.receiverConnection)
 
@@ -181,7 +180,7 @@ func errorOutShare(share *Share, context *globalContext, errorReason string) {
 		}
 	}
 	if websocket.IsConnected(share.receiverConnection) {
-		err = websocket.SendBlobData(share.senderConnection, errorEncoded)
+		err = websocket.SendBlobData(share.receiverConnection, errorEncoded)
 		if err != nil {
 			// failed to send error to reciever
 		}

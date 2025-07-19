@@ -44,7 +44,7 @@ func encodeSenderAcceptance(shareCode []byte) ([]byte, error) {
 }
 
 func encodeRecieverAcceptance() []byte {
-	return commonEncoding(RECIEVER_ACCEPTED, 0)
+	return commonEncoding(RECEIVER_ACCEPTED, 0)
 }
 
 func encodeReady(publicKey []byte) ([]byte, error) {
