@@ -197,32 +197,37 @@ func errorOutShare(share *Share, context *globalContext, errorReason string) {
 }
 
 func facilitateShare(share *Share, context *globalContext) {
-	// TODO: refactor this into smaller functions
-	// TODO: implement the many Unimplemented edgecases
+	/* TODO: Refactor into smaller functions to handle phases of the share
+	For example could be:
+	+ Sender Initiation and Acceptance
+	+ Reciever Initiation and Acceptance
+	+ Ready
+	+ Metadata
+	+ Data sharing
+	+ Close out
+	*/
 
 	websocket.WaitUntilConnected(share.senderConnection)
 	senderInitiation := <-share.senderConnection.Incoming
 	err := decodeSenderInitiation(senderInitiation)
 
 	if err != nil {
-		panic("Unimplmented edgecase")
-		// close the share and clean up
+		errorOutShare(share, context, "Failed to decode sender initiation message.")
+		return
 	}
 
 	senderAcceptance, err := encodeSenderAcceptance(share.shareCode[:])
 
 	if err != nil {
-		panic("Unimplmented edgecase")
-		// close the share and clean up
+		errorOutShare(share, context, "Failed to encode sender acceptance message.")
+		return
 	}
 
 	err = websocket.SendBlobData(share.senderConnection, senderAcceptance)
 
 	if err != nil {
-		// close the share
-		// communicate with client
-		// clean up
-		panic("Unimplmented edgecase")
+		errorOutShare(share, context, "Failed send sender acceptance message.")
+		return
 	}
 
 	websocket.WaitUntilConnected(share.receiverConnection)
@@ -231,62 +236,60 @@ func facilitateShare(share *Share, context *globalContext) {
 	recieverPublicKey, err := decodeReceiverInitiation(recieverInitiation)
 
 	if err != nil {
-		panic("Un-implmented edgecase")
-		// close the share and clean up
+		errorOutShare(share, context, "Failed to decode receiver initiation message.")
+		return
 	}
 
 	recieverAcceptance := encodeRecieverAcceptance()
 	err = websocket.SendBlobData(share.receiverConnection, recieverAcceptance)
 
 	if err != nil {
-		// close the share
-		// communicate with sender
-		// clean up
-		panic("Unimplmented edgecase")
+		errorOutShare(share, context, "Failed to send receiver acceptance message.")
+		return
 	}
 
 	ready, err := encodeReady(recieverPublicKey)
 	err = websocket.SendBlobData(share.senderConnection, ready)
 
 	if err != nil {
-		// close the share
-		// communicate with sender
-		// clean up
-		panic("Unimplmented edgecase")
+		errorOutShare(share, context, "Failed to send ready message.")
+		return
 	}
 
 	meta := <-share.senderConnection.Incoming
 	numberOfChunks, err := decodeMetadata(meta)
 
+	if err != nil {
+		errorOutShare(share, context, "Failed to decode metadata message.")
+		return
+	}
+
 	err = websocket.SendBlobData(share.receiverConnection, meta)
 
 	if err != nil {
-		// close the share
-		// communicate with sender
-		// clean up
-		panic("Unimplmented edgecase")
+		errorOutShare(share, context, "Failed to forward metadata message.")
+		return
 	}
 
 	metaDataAck := <-share.receiverConnection.Incoming
 	chunkNumber, err := decodeAcknowledge(metaDataAck)
 
 	if err != nil {
-		panic("Un-implmented edgecase")
-		// close the share and clean up
+		errorOutShare(share, context, "Failed to decode awknowledgement.")
+		return
 	}
 
 	if chunkNumber != 0xFF {
-		panic("Un-implmented edgecase")
-		// close the share and clean up
+		errorString := fmt.Sprintf("Recieved awknowledgement for chunk %X which not yet been sent.", chunkNumber)
+		errorOutShare(share, context, errorString)
+		return
 	}
 
 	err = websocket.SendBlobData(share.senderConnection, metaDataAck)
 
 	if err != nil {
-		// close the share
-		// communicate with sender
-		// clean up
-		panic("Unimplmented edgecase")
+		errorOutShare(share, context, "Failed to forward awknowledgement.")
+		return
 	}
 
 	for i := uint16(0); i <= numberOfChunks; i++ {
@@ -294,37 +297,45 @@ func facilitateShare(share *Share, context *globalContext) {
 
 		chunkNumber, err = decodeDataChunk(chunk)
 
-		if err != nil || chunkNumber != i {
-			// Failed to decode data chunk or mismatched state bettween client and server
-			// Probably send some sort of error to the clients
-			panic("Un-implmented edgecase")
+		if err != nil {
+			errorOutShare(share, context, "Failed to decode data chunk metadata.")
+			return
+		}
+
+		if chunkNumber != i {
+			errorString := fmt.Sprintf("Recieved chunk %X, expected chunk %X.", chunkNumber, i)
+			errorOutShare(share, context, errorString)
+			return
 		}
 
 		err = websocket.SendBlobData(share.receiverConnection, chunk)
 
 		if err != nil {
-			// close the share
-			// communicate with sender
-			// clean up
-			panic("Unimplmented edgecase")
+			errorOutShare(share, context, "Failed to forward data chunk.")
+			return
 		}
 
 		metaDataAck := <-share.receiverConnection.Incoming
 		chunkNumber, err := decodeAcknowledge(metaDataAck)
 
-		if err != nil || chunkNumber != i {
-			// Failed to decode data chunk or mismatched state bettween client and server
-			// Probably send some sort of error to the clients
-			panic("Un-implmented edgecase")
+		if err != nil {
+			errorOutShare(share, context, "Failed to decode awknowledgement.")
+			return
+		}
+
+		if chunkNumber != i {
+			errorString := fmt.Sprintf("Recieved acknowledgement for chunk %X, expected chunk %X.", chunkNumber, i)
+			errorOutShare(share, context, errorString)
+			return
 		}
 
 		err = websocket.SendBlobData(share.senderConnection, metaDataAck)
 
 		if err != nil {
-			// close the share
-			// communicate with sender
-			// clean up
-			panic("Unimplmented edgecase")
+			if err != nil {
+				errorOutShare(share, context, "Failed to forward awknowledgement.")
+				return
+			}
 		}
 
 	}
