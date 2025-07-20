@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   version="1.1"
+   viewBox="0 0 64.427824 137.78266"
+   width="193.28348"
+   height="413.34799"
+   id="svg70"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <!-- svg-source:excalidraw -->
+  <metadata
+     id="metadata2" />
+  <defs
+     id="defs6">
+    <style
+       class="style-fonts"
+       id="style4" />
+  </defs>
+  <mask
+     id="mask16" />
+  <mask
+     id="mask26" />
+  <mask
+     id="mask36" />
+  <mask
+     id="mask52" />
+  <mask
+     id="mask68" />
+  <g
+     id="g301"
+     transform="rotate(180,-103.58583,59.62907)">
+    <rect
+       style="fill:#c984b0;fill-opacity:1;stroke:#9d5ab8;stroke-width:5;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:1"
+       id="rect4471"
+       width="29.972504"
+       height="83.457924"
+       x="-254.23303"
+       y="-15.941388"
+       transform="rotate(0.01873406)" />
+    <path
+       style="fill:#c984b0;fill-opacity:1;stroke:#9d5ab8;stroke-width:5;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:1"
+       d="m -209.67144,68.209662 -59.42821,-0.52068 27.82829,49.069388 z"
+       id="path4533" />
+  </g>
+</svg>
