@@ -25,7 +25,7 @@ const Arrow: React.FunctionComponent<ArrowProps> = ({ arrowVariant }) => {
   }
 };
 
-const Section: React.FunctionComponent<SectionProps> = ({
+export const Section: React.FunctionComponent<SectionProps> = ({
   children,
   title,
   colour,
@@ -66,29 +66,6 @@ const SectionTitle: React.FunctionComponent<SectionTitleProps> = ({
   title,
 }) => {
   return <p className="text-5xl">{title}</p>;
-};
-
-const SendInput = () => {
-  return (
-    <>
-      <input
-        type="file"
-        id="send_file_picker"
-        className="bg-slate-500 file:bg-logopurple file:hover:bg-logopurpledark file:py-2 file:px-4 file:font-bold rounded"
-      />
-      <button className="bg-logopurple hover:bg-logopurpledark text-white font-bold py-2 px-4 rounded">
-        Send
-      </button>
-    </>
-  );
-};
-
-export const Send = () => {
-  return (
-    <Section title="SEND" colour="pink" arrow_type="up">
-      <SendInput />
-    </Section>
-  );
 };
 
 const RecieveInput = () => {
