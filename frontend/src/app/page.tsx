@@ -1,11 +1,11 @@
-import { SendSection, RecieveSection } from "./section";
+import { Send, Recieve } from "./section";
 
 export default function Home() {
   return (
     <>
       <main className="font-mono flex h-screen flex-col md:flex-row">
-        <SendSection />
-        <RecieveSection />
+        <Send />
+        <Recieve />
       </main>
       <footer></footer>
     </>

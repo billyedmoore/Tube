@@ -16,7 +16,7 @@ interface ArrowProps {
 const Arrow: React.FunctionComponent<ArrowProps> = ({ arrowVariant }) => {
   switch (arrowVariant) {
     case "up":
-      return <Image src="/up.svg" alt="up arrow" width={20} height={5} />;
+      return <Image src="/up.svg" alt="up arrow" width={20} height={10} />;
     case "down":
       return <Image src="/down.svg" alt="up arrow" width={20} height={10} />;
     default:
@@ -45,12 +45,14 @@ const Section: React.FunctionComponent<SectionProps> = ({
 
   return (
     <div className={className}>
-      <div className="flex flex-col items-center justify-center">
+      <div className="flex flex-col items-center gap-10 justify-center">
         <div className="flex flex-row gap-3">
           <SectionTitle title={title} />
           <Arrow arrowVariant={arrow_type} />
         </div>
-        <div className="flex flex-row gap-3 py-10 ">{children}</div>
+        <div className="flex flex-row gap-3 md:shrink w-full items-center">
+          {children}
+        </div>
       </div>
     </div>
   );
@@ -66,31 +68,49 @@ const SectionTitle: React.FunctionComponent<SectionTitleProps> = ({
   return <p className="text-5xl">{title}</p>;
 };
 
-export const SendSection = () => {
+const SendInput = () => {
   return (
-    <Section title="SEND" colour="pink" arrow_type="up">
+    <>
       <input
         type="file"
-        className="bg-slate-500 file:bg-logopurple file:hover:bg-logopurpledark file:py-2 file:px-4 file:font-bold rounded "
+        id="send_file_picker"
+        className="bg-slate-500 file:bg-logopurple file:hover:bg-logopurpledark file:py-2 file:px-4 file:font-bold rounded"
       />
       <button className="bg-logopurple hover:bg-logopurpledark text-white font-bold py-2 px-4 rounded">
         Send
       </button>
+    </>
+  );
+};
+
+export const Send = () => {
+  return (
+    <Section title="SEND" colour="pink" arrow_type="up">
+      <SendInput />
     </Section>
   );
 };
 
-export const RecieveSection = () => {
+const RecieveInput = () => {
   return (
-    <Section title="RECIEVE" colour="purple" arrow_type="down">
+    <>
       <input
         type="text"
+        id="receive_share_code_input"
         className="bg-slate-500 py-2 px-4 rounded focus:bg-slate-400"
         placeholder="share_code"
       />
       <button className="bg-logopink hover:bg-logopinkdark text-white font-bold py-2 px-4 rounded">
         Fetch
       </button>
+    </>
+  );
+};
+
+export const Recieve = () => {
+  return (
+    <Section title="RECIEVE" colour="purple" arrow_type="down">
+      <RecieveInput />
     </Section>
   );
 };
