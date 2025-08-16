@@ -67,27 +67,3 @@ const SectionTitle: React.FunctionComponent<SectionTitleProps> = ({
 }) => {
   return <p className="text-5xl">{title}</p>;
 };
-
-const RecieveInput = () => {
-  return (
-    <>
-      <input
-        type="text"
-        id="receive_share_code_input"
-        className="bg-slate-500 py-2 px-4 rounded focus:bg-slate-400"
-        placeholder="share_code"
-      />
-      <button className="bg-logopink hover:bg-logopinkdark text-white font-bold py-2 px-4 rounded">
-        Fetch
-      </button>
-    </>
-  );
-};
-
-export const Recieve = () => {
-  return (
-    <Section title="RECIEVE" colour="purple" arrow_type="down">
-      <RecieveInput />
-    </Section>
-  );
-};

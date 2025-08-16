@@ -1,6 +1,6 @@
 "use client";
 
-import { Recieve } from "./section";
+import { Recieve } from "./receive";
 import { Send } from "./send";
 
 export default function Home() {
