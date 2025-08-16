@@ -95,7 +95,15 @@ func readWorker(connection *Connection) {
 					fmt.Printf("Failed to decode frame. %e", err)
 				}
 
-				fmt.Printf("Frame recieved %v", frm.operation)
+				fmt.Print("Blob: ")
+				for _, b := range data {
+					fmt.Printf("%d ", b)
+				}
+				fmt.Println()
+
+				fmt.Printf("Frame - %v\n", frm)
+				fmt.Printf("Frame recieved - %v\n", frm.operation)
+
 				switch frm.operation {
 				case BINARY_FRAME:
 					connection.Incoming <- frm.payload
@@ -243,6 +251,8 @@ func SendBlobData(connection *Connection, data []byte) error {
 
 	payload, err := encodeFrame(frm)
 
+	fmt.Printf("Writing frame - %v\n", frm)
+
 	if err != nil {
 		return fmt.Errorf("Couldn't encode binary frame for data: %v.", data)
 	}
@@ -256,7 +266,6 @@ func SendBlobData(connection *Connection, data []byte) error {
 	return nil
 }
 
-// This is the external class to allow the inititation of a close by external users
 // TODO: design such that if there are errors sending the close frame there is visibility
 func InitiateClose(connection *Connection) error {
 	fmt.Println("CLOSE INITATED")

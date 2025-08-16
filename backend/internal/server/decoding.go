@@ -23,17 +23,24 @@ func commonDecoding(blob []byte) (opcode, uint8, []byte, error) {
 	if uint8(blob[0]) > highestOpCode {
 		return 0, 0, nil, fmt.Errorf("Invalid opcode provided")
 	}
+
+	fmt.Print("Blob: ")
+	for _, b := range blob {
+		fmt.Printf("%d ", b)
+	}
+	fmt.Println()
+
 	return opcode(blob[0]), blob[1], blob[2:], nil
 }
 
 func decodeSenderInitiation(blob []byte) error {
 	op, ver, _, err := commonDecoding(blob)
 
-	if ver != 0 {
-	}
-
 	if err != nil {
 		return err
+	}
+
+	if ver != 0 {
 	}
 
 	if op != SENDER_INITIATION {

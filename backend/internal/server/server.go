@@ -4,7 +4,9 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/billyedmoore/tube/internal/websocket"
@@ -26,7 +28,7 @@ const (
 	ERROR               opcode = 0x9
 )
 
-type Share struct {
+type share struct {
 	shareCode          [5]byte
 	senderConnection   *websocket.Connection
 	receiverConnection *websocket.Connection
@@ -34,8 +36,8 @@ type Share struct {
 
 type globalContext struct {
 	lock                    sync.Mutex
-	activeShares            map[[5]byte]*Share
-	sharesAwaitingReceivers map[[5]byte]*Share
+	activeShares            map[[5]byte]*share
+	sharesAwaitingReceivers map[[5]byte]*share
 }
 
 type senderHandler struct {
@@ -44,6 +46,28 @@ type senderHandler struct {
 
 type receiverHandler struct {
 	context *globalContext
+}
+
+func Serve() {
+	port := 8080
+
+	msg := fmt.Sprintf("---- Serving tube on :%d ----\n", port)
+	rule := fmt.Sprintf("%s\n", strings.Repeat("-", len(msg)-1))
+
+	fmt.Print(rule, msg, rule)
+
+	context := globalContext{
+		activeShares:            make(map[[5]byte]*share),
+		sharesAwaitingReceivers: make(map[[5]byte]*share),
+	}
+
+	sendHandler := &senderHandler{context: &context}
+	recieveHandler := &receiverHandler{context: &context}
+
+	http.Handle("/send", sendHandler)
+	http.Handle("/recieve", recieveHandler)
+
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), nil))
 }
 
 func (h senderHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -57,6 +81,7 @@ func (h senderHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	err = websocket.UpgradeConnection(w, r, connection)
 
 	if err != nil {
+		fmt.Printf("Websocket upgrade failed - %v", err)
 		http.Error(w, "Websocket failed to upgrade.", http.StatusInternalServerError)
 		return
 	}
@@ -65,6 +90,7 @@ func (h senderHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		//TODO: send error frame over websocket
+		fmt.Printf("Error creating share encountered - %v", err)
 		websocket.InitiateClose(connection)
 		return
 	}
@@ -119,7 +145,7 @@ func (h receiverHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func createShare(senderConnection *websocket.Connection, context *globalContext) (*Share, error) {
+func createShare(senderConnection *websocket.Connection, context *globalContext) (*share, error) {
 	receiverConnection, err := websocket.CreateConnection()
 
 	if err != nil {
@@ -146,7 +172,7 @@ func createShare(senderConnection *websocket.Connection, context *globalContext)
 		}
 	}
 
-	newShare := &Share{
+	newShare := &share{
 		shareCode:          shareCode,
 		senderConnection:   senderConnection,
 		receiverConnection: receiverConnection,
@@ -158,7 +184,10 @@ func createShare(senderConnection *websocket.Connection, context *globalContext)
 	return newShare, nil
 }
 
-func errorOutShare(share *Share, context *globalContext, errorReason string) {
+func errorOutShare(share *share, context *globalContext, errorReason string) {
+	fmt.Printf("ERROR ENCOUNTERED - %s\n", errorReason)
+	fmt.Printf("SENDING ERROR FRAME\n")
+
 	const maxLength = 65535
 
 	if len(errorReason) > maxLength {
@@ -195,7 +224,7 @@ func errorOutShare(share *Share, context *globalContext, errorReason string) {
 	delete(context.activeShares, share.shareCode)
 }
 
-func facilitateShare(share *Share, context *globalContext) {
+func facilitateShare(share *share, context *globalContext) {
 	/* TODO: Refactor into smaller functions to handle phases of the share
 	For example could be:
 	+ Sender Initiation and Acceptance
@@ -211,6 +240,7 @@ func facilitateShare(share *Share, context *globalContext) {
 	err := decodeSenderInitiation(senderInitiation)
 
 	if err != nil {
+		fmt.Println(err)
 		errorOutShare(share, context, "Failed to decode sender initiation message.")
 		return
 	}
@@ -218,6 +248,7 @@ func facilitateShare(share *Share, context *globalContext) {
 	senderAcceptance, err := encodeSenderAcceptance(share.shareCode[:])
 
 	if err != nil {
+		fmt.Println(err)
 		errorOutShare(share, context, "Failed to encode sender acceptance message.")
 		return
 	}
@@ -225,6 +256,7 @@ func facilitateShare(share *Share, context *globalContext) {
 	err = websocket.SendBlobData(share.senderConnection, senderAcceptance)
 
 	if err != nil {
+		fmt.Println(err)
 		errorOutShare(share, context, "Failed send sender acceptance message.")
 		return
 	}
@@ -235,6 +267,7 @@ func facilitateShare(share *Share, context *globalContext) {
 	recieverPublicKey, err := decodeReceiverInitiation(recieverInitiation)
 
 	if err != nil {
+		fmt.Println(err)
 		errorOutShare(share, context, "Failed to decode receiver initiation message.")
 		return
 	}
@@ -243,6 +276,7 @@ func facilitateShare(share *Share, context *globalContext) {
 	err = websocket.SendBlobData(share.receiverConnection, recieverAcceptance)
 
 	if err != nil {
+		fmt.Println(err)
 		errorOutShare(share, context, "Failed to send receiver acceptance message.")
 		return
 	}
@@ -251,6 +285,7 @@ func facilitateShare(share *Share, context *globalContext) {
 	err = websocket.SendBlobData(share.senderConnection, ready)
 
 	if err != nil {
+		fmt.Println(err)
 		errorOutShare(share, context, "Failed to send ready message.")
 		return
 	}
@@ -331,14 +366,13 @@ func facilitateShare(share *Share, context *globalContext) {
 		err = websocket.SendBlobData(share.senderConnection, metaDataAck)
 
 		if err != nil {
-			if err != nil {
-				errorOutShare(share, context, "Failed to forward awknowledgement.")
-				return
-			}
+			errorOutShare(share, context, "Failed to forward awknowledgement.")
+			return
 		}
 
 	}
 
+	fmt.Println("Share successfully completed, closing.")
 	websocket.InitiateClose(share.senderConnection)
 	websocket.InitiateClose(share.receiverConnection)
 
