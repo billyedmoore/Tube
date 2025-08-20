@@ -192,18 +192,25 @@ func decodeFrame(recievedData []byte) (frame, error) {
 	var fin bool = (recievedData[0] & 0x80) != 0
 	var operation opcode = opcode((recievedData[0] & 0x0F))
 	var mask bool = (recievedData[1] & 0x80) != 0
-	var payloadLength uint64 = uint64((recievedData[1]) & 0x7F)
+	var shortPayloadLength uint64 = uint64((recievedData[1]) & 0x7F)
 	var maskKey uint32 = 0
 
 	nextByteIndex := 2
 
-	switch payloadLength {
+	var payloadLength uint64
+
+	switch shortPayloadLength {
+	// payload length is next 16 bits
 	case 126:
-		payloadLength = binary.BigEndian.Uint64(recievedData[nextByteIndex:(nextByteIndex + 2)])
+		payloadLength = uint64(binary.BigEndian.Uint16(recievedData[nextByteIndex:(nextByteIndex + 2)]))
 		nextByteIndex += 2
+	// payload length is next 64 bits
 	case 127:
 		payloadLength = binary.BigEndian.Uint64(recievedData[nextByteIndex:(nextByteIndex + 8)])
 		nextByteIndex += 8
+	default:
+		payloadLength = shortPayloadLength
+
 	}
 
 	if mask {
