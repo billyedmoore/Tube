@@ -30,7 +30,7 @@ func encodeError(errorReason string) ([]byte, error) {
 }
 
 func encodeSenderAcceptance(shareCode []byte) ([]byte, error) {
-	expectedShareCodeLength := 5
+	expectedShareCodeLength := 6
 	if len(shareCode) != expectedShareCodeLength {
 		return nil, fmt.Errorf("Argument `share_code` should be of length %d is actually of length %d.",
 			expectedShareCodeLength, len(shareCode))

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -15,6 +16,8 @@ import (
 type opcode uint8
 
 const highestOpCode = 0x9
+
+const SHARE_CODE_LENGTH = 6
 
 const (
 	SENDER_INITIATION   opcode = 0x1
@@ -29,15 +32,15 @@ const (
 )
 
 type share struct {
-	shareCode          [5]byte
+	shareCode          [SHARE_CODE_LENGTH]byte
 	senderConnection   *websocket.Connection
 	receiverConnection *websocket.Connection
 }
 
 type globalContext struct {
 	lock                    sync.Mutex
-	activeShares            map[[5]byte]*share
-	sharesAwaitingReceivers map[[5]byte]*share
+	activeShares            map[[SHARE_CODE_LENGTH]byte]*share
+	sharesAwaitingReceivers map[[SHARE_CODE_LENGTH]byte]*share
 }
 
 type senderHandler struct {
@@ -57,15 +60,15 @@ func Serve() {
 	fmt.Print(rule, msg, rule)
 
 	context := globalContext{
-		activeShares:            make(map[[5]byte]*share),
-		sharesAwaitingReceivers: make(map[[5]byte]*share),
+		activeShares:            make(map[[SHARE_CODE_LENGTH]byte]*share),
+		sharesAwaitingReceivers: make(map[[SHARE_CODE_LENGTH]byte]*share),
 	}
 
 	sendHandler := &senderHandler{context: &context}
 	recieveHandler := &receiverHandler{context: &context}
 
 	http.Handle("/send", sendHandler)
-	http.Handle("/recieve", recieveHandler)
+	http.Handle("/receive", recieveHandler)
 
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), nil))
 }
@@ -104,7 +107,9 @@ func isValidShareCode(shareCode string) (bool, string) {
 	if len(shareCode) == 0 {
 		return false, "shareCode parameter is not set or is set to \"\"."
 	}
-	if len(shareCode) > 8 {
+	base64_len := int(4 * math.Ceil(SHARE_CODE_LENGTH/3))
+
+	if len(shareCode) > base64_len {
 		return false, "Provided shareCode is too long to be a valid share code."
 	}
 	return true, ""
@@ -127,7 +132,7 @@ func (h receiverHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var shareCode [5]byte
+	var shareCode [SHARE_CODE_LENGTH]byte
 	copy(shareCode[:], shareCodeSlice)
 
 	h.context.lock.Lock()
@@ -152,7 +157,7 @@ func createShare(senderConnection *websocket.Connection, context *globalContext)
 		return nil, fmt.Errorf("Failed to create receiver connection")
 	}
 
-	var shareCode [5]byte
+	var shareCode [SHARE_CODE_LENGTH]byte
 	shareCodeSet := false
 
 	context.lock.Lock()
