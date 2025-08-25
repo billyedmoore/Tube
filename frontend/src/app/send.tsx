@@ -1,6 +1,10 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Section } from "./section";
 import { Mutex } from "../tube_message_protocol/mutex";
+import {
+  handleSenderAccepted,
+  SendMessageHandler,
+} from "../tube_message_protocol/send_handlers";
 
 // Shared between the send and receive sides of the share
 export type Share = {
@@ -9,7 +13,9 @@ export type Share = {
 };
 
 export type SendingShare = Share & {
-  // Stuff special to the Share side of the Share
+  recieverPublicKey?: CryptoKey;
+  file?: File;
+  ws?: WebSocket;
 };
 
 export enum SendState {
@@ -26,21 +32,40 @@ interface SendSubComponentProps {
   setSendState: React.Dispatch<React.SetStateAction<SendState>>;
 }
 
-const SendInput: React.FC<SendSubComponentProps> = ({
+interface SendInputProps extends SendSubComponentProps {
+  onInputEntered: () => void;
+}
+
+const SendInput: React.FC<SendInputProps> = ({
   share,
   setShare,
-  setSendState,
+  onInputEntered,
 }) => {
+  const [file, setFile] = useState<File | undefined>(undefined);
   return (
     <>
       <input
         type="file"
         id="send_file_picker"
         className="bg-slate-500 file:bg-logopurple file:hover:bg-logopurpledark file:py-2 file:px-4 file:font-bold rounded"
+        onChange={(event) => setFile(event.target.files?.[0] || undefined)}
       />
       <button
-        className="bg-logopurple hover:bg-logopurpledark text-white font-bold py-2 px-4 rounded"
-        onClick={() => setSendState(SendState.WAITING)}
+        className={
+          "bg-logopurple hover:bg-logopurpledark text-white font-bold py-2 px-4 rounded"
+        }
+        onClick={() => {
+          if (share != undefined) {
+            console.error("Share should not yet exist, but is not undefined.");
+          }
+
+          if (file) {
+            setShare({ file: file });
+            onInputEntered();
+          } else {
+            window.alert("Please select a file.");
+          }
+        }}
       >
         Send
       </button>
@@ -48,29 +73,17 @@ const SendInput: React.FC<SendSubComponentProps> = ({
   );
 };
 
-const SendWaiting: React.FC<SendSubComponentProps> = ({
-  share,
-  setShare,
-  setSendState,
-}) => {
+const SendWaiting: React.FC<SendSubComponentProps> = ({ share }) => {
   return (
     <>
-      <p>Waiting.</p>
-      <button
-        className="bg-logopurple hover:bg-logopurpledark text-white font-bold py-2 px-4 rounded"
-        onClick={() => setSendState(SendState.ACTIVE)}
-      >
-        Send
-      </button>
+      <p>
+        ShareCode: <b className="text-xl font-mono">{share?.shareCode}</b>
+      </p>
     </>
   );
 };
 
-const SendActive: React.FC<SendSubComponentProps> = ({
-  share,
-  setShare,
-  setSendState,
-}) => {
+const SendActive: React.FC<SendSubComponentProps> = ({ setSendState }) => {
   return (
     <>
       <p>Active.</p>
@@ -84,11 +97,7 @@ const SendActive: React.FC<SendSubComponentProps> = ({
   );
 };
 
-const SendComplete: React.FC<SendSubComponentProps> = ({
-  share,
-  setShare,
-  setSendState,
-}) => {
+const SendComplete: React.FC<SendSubComponentProps> = ({ setSendState }) => {
   return (
     <>
       <p>Complete.</p>
@@ -104,12 +113,12 @@ const SendComplete: React.FC<SendSubComponentProps> = ({
 
 const SendError: React.FC<SendSubComponentProps> = ({
   share,
-  setShare,
   setSendState,
 }) => {
+  console.error(`Send is in Error state -> `, share);
   return (
     <>
-      <p>Oooops, somthing went wrong.</p>
+      <p>{share?.error ? share.error : "Oooops, somthing went wrong."}</p>
       <button
         className="bg-logopurple hover:bg-logopurpledark text-white font-bold py-2 px-4 rounded"
         onClick={() => setSendState(SendState.INPUT)}
@@ -121,34 +130,40 @@ const SendError: React.FC<SendSubComponentProps> = ({
 };
 
 export const Send = () => {
-  const [openShare, setOpenShare] = useState<SendingShare | undefined>(
-    undefined,
-  );
+  const [share, setShare] = useState<SendingShare | undefined>(undefined);
   const [sendState, setSendingState] = useState<SendState>(SendState.INPUT);
 
-  const incomingMessageMutex = Mutex();
-  useEffect(() => {
-    // TODO: move this to an env variable
-    const ws = new WebSocket("ws://localhost:8080/send");
-    let handler = (ws.onopen = (_) => {
-      // Send Initation
-    });
+  const startShareConnection = () => {
+    let ws: WebSocket;
+    ws = new WebSocket("ws://localhost:8080/send");
 
-    ws.onmessage = async (message) => {
-      // I think we can skip the mutex by making the handler functions non-asyc
-      // Can check back and see if the async is needed
-      await incomingMessageMutex.lock();
-      handler = await handler(
-        ws,
-        message,
-        openShare,
-        setOpenShare,
-        sendState,
-        setSendingState,
-      );
-      incomingMessageMutex.unlock();
+    const incomingMessageMutex = new Mutex();
+    ws.onopen = () => {
+      // TODO: change this to an encodingFunction
+      ws.send(Uint8Array.from([1, 0]).buffer);
     };
-  });
+
+    ws.onerror = (error) => {
+      console.error("SEND WebSocket connection failed - ", error);
+      setShare({ ...share, error: "Backend Connection Failed" });
+      setSendingState(SendState.ERROR);
+    };
+
+    let handler: SendMessageHandler = handleSenderAccepted;
+    ws.onmessage = async (message) => {
+      try {
+        await incomingMessageMutex.lock();
+        handler = await handler(ws, message, share, setShare, setSendingState);
+      } catch (e) {
+        console.error(e);
+        const err = e instanceof Error ? e.message : "";
+        setShare({ ...share, error: err });
+        setSendingState(SendState.ERROR);
+      } finally {
+        incomingMessageMutex.unlock();
+      }
+    };
+  };
 
   let component: React.ReactNode;
 
@@ -156,17 +171,18 @@ export const Send = () => {
     case SendState.INPUT:
       component = (
         <SendInput
-          share={openShare}
-          setShare={setOpenShare}
+          share={share}
+          setShare={setShare}
           setSendState={setSendingState}
+          onInputEntered={startShareConnection}
         />
       );
       break;
     case SendState.WAITING:
       component = (
         <SendWaiting
-          share={openShare}
-          setShare={setOpenShare}
+          share={share}
+          setShare={setShare}
           setSendState={setSendingState}
         />
       );
@@ -174,8 +190,8 @@ export const Send = () => {
     case SendState.ACTIVE:
       component = (
         <SendActive
-          share={openShare}
-          setShare={setOpenShare}
+          share={share}
+          setShare={setShare}
           setSendState={setSendingState}
         />
       );
@@ -183,16 +199,16 @@ export const Send = () => {
     case SendState.COMPLETE:
       component = (
         <SendComplete
-          share={openShare}
-          setShare={setOpenShare}
+          share={share}
+          setShare={setShare}
           setSendState={setSendingState}
         />
       );
     case SendState.ERROR:
       component = (
         <SendError
-          share={openShare}
-          setShare={setOpenShare}
+          share={share}
+          setShare={setShare}
           setSendState={setSendingState}
         />
       );

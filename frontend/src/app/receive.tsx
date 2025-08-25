@@ -1,9 +1,17 @@
 import { useState } from "react";
 import { Section } from "./section";
 import { Share } from "./send";
+import { Mutex } from "../tube_message_protocol/mutex";
+import { generateKeyPair } from "../crypto";
+import { encodeReceiverInitiation } from "../tube_message_protocol/encoding";
+import {
+  handleReceiverAccepted,
+  ReceiveMessageHandler,
+} from "@/tube_message_protocol/recieve_handlers";
 
 export type ReceivingShare = Share & {
   fileName?: string;
+  keys?: CryptoKeyPair;
 };
 
 export enum ReceiveState {
@@ -20,11 +28,11 @@ interface ReceiveSubComponentProps {
 }
 
 interface ReceiveInputProps extends ReceiveSubComponentProps {
-  onInputEntered: () => void;
+  onInputEntered: (share: ReceivingShare) => void;
 }
 
-const ReceiveInput: React.FC<ReceiveInputProps> = ({ setShare, onInputEntered }) => {
-  const [inputtedShareCode, setInputtedShareCode] = useState<string>("")
+const ReceiveInput: React.FC<ReceiveInputProps> = ({ onInputEntered }) => {
+  const [inputtedShareCode, setInputtedShareCode] = useState<string>("");
   return (
     <>
       <input
@@ -34,10 +42,14 @@ const ReceiveInput: React.FC<ReceiveInputProps> = ({ setShare, onInputEntered })
         placeholder="share_code"
         onChange={(change) => setInputtedShareCode(change.target.value)}
       />
-      <button className="bg-logopink hover:bg-logopinkdark text-white font-bold py-2 px-4 rounded"
-        onClick={() => { setShare({ shareCode: inputtedShareCode }); onInputEntered(); }}>
+      <button
+        className="bg-logopink hover:bg-logopinkdark text-white font-bold py-2 px-4 rounded"
+        onClick={() => {
+          onInputEntered({ shareCode: inputtedShareCode });
+        }}
+      >
         Fetch
-      </button >
+      </button>
     </>
   );
 };
@@ -64,9 +76,7 @@ const ReceiveError: React.FC<ReceiveSubComponentProps> = ({
 }) => {
   return (
     <>
-      <p>
-        {(share?.error) ? share.error : "Oooops, somthing went wrong."}
-      </p>
+      <p>{share?.error ? share.error : "Oooops, somthing went wrong."}</p>
       <button
         className="bg-logopurple hover:bg-logopurpledark text-white font-bold py-2 px-4 rounded"
         onClick={() => setRecieveState(ReceiveState.INPUT)}
@@ -77,36 +87,70 @@ const ReceiveError: React.FC<ReceiveSubComponentProps> = ({
   );
 };
 
-const ReceiveActive: React.FC<ReceiveSubComponentProps> = ({ setRecieveState }) => {
+const ReceiveActive: React.FC<ReceiveSubComponentProps> = ({
+  setRecieveState,
+}) => {
   return (
     <>
       <p>Active</p>
       <button
         className="bg-logopurple hover:bg-logopurpledark text-white font-bold py-2 px-4 rounded"
         onClick={() => setRecieveState(ReceiveState.INPUT)}
-      > Back
+      >
+        {" "}
+        Back
       </button>
     </>
   );
 };
 
-
 export const Recieve = () => {
-  const [share, setShare] = useState<ReceivingShare | undefined>(
-    undefined,
+  const [share, setShare] = useState<ReceivingShare | undefined>(undefined);
+  const [receiveState, setReceiveState] = useState<ReceiveState>(
+    ReceiveState.INPUT,
   );
-  const [sendState, setReceivingState] = useState<ReceiveState>(ReceiveState.INPUT);
+
+  const startRecieveConnection = (share: ReceivingShare) => {
+    let ws: WebSocket;
+    ws = new WebSocket(
+      `ws://localhost:8080/receive?share_code=${share?.shareCode}`,
+    );
+
+    ws.onopen = async () => {
+      const keyPair = await generateKeyPair();
+      const receiverInitiation = await encodeReceiverInitiation(
+        keyPair.publicKey,
+      );
+      ws.send(receiverInitiation);
+      setShare({ ...share, keys: keyPair });
+    };
+
+    ws.onerror = () => {
+      setShare({ ...share, error: "Backend Connection Failed" });
+      setReceiveState(ReceiveState.ERROR);
+    };
+
+    const incomingMessageMutex = new Mutex();
+    let handler: ReceiveMessageHandler = handleReceiverAccepted;
+    ws.onmessage = async (message) => {
+      await incomingMessageMutex.lock();
+      handler = await handler(ws, message, share, setShare, setReceiveState);
+      incomingMessageMutex.unlock();
+    };
+
+    setShare({ ...share });
+  };
 
   let component: React.ReactNode;
 
-  switch (sendState) {
+  switch (receiveState) {
     case ReceiveState.INPUT:
       component = (
         <ReceiveInput
           share={share}
           setShare={setShare}
-          setRecieveState={setReceivingState}
-          onInputEntered={() => setReceivingState(ReceiveState.ACTIVE)}
+          setRecieveState={setReceiveState}
+          onInputEntered={startRecieveConnection}
         />
       );
       break;
@@ -115,7 +159,7 @@ export const Recieve = () => {
         <ReceiveActive
           share={share}
           setShare={setShare}
-          setRecieveState={setReceivingState}
+          setRecieveState={setReceiveState}
         />
       );
       break;
@@ -124,7 +168,7 @@ export const Recieve = () => {
         <ReceiveComplete
           share={share}
           setShare={setShare}
-          setRecieveState={setReceivingState}
+          setRecieveState={setReceiveState}
         />
       );
       break;
@@ -133,12 +177,11 @@ export const Recieve = () => {
         <ReceiveError
           share={share}
           setShare={setShare}
-          setRecieveState={setReceivingState}
+          setRecieveState={setReceiveState}
         />
       );
       break;
   }
-
 
   return (
     <Section title="RECIEVE" colour="purple" arrow_type="down">

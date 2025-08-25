@@ -1,4 +1,4 @@
-class Mutex {
+export class Mutex {
   private locked: boolean;
 
   constructor() {
