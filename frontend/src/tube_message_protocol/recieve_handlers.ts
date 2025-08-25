@@ -7,16 +7,14 @@ export interface ReceiveMessageHandler {
     ws: WebSocket,
     incoming: MessageEvent,
     share: ReceivingShare | undefined,
-    setShare: React.Dispatch<React.SetStateAction<ReceivingShare | undefined>>,
     setSendState: React.Dispatch<React.SetStateAction<ReceiveState>>,
-  ): Promise<ReceiveMessageHandler>;
+  ): Promise<[ReceivingShare | undefined, ReceiveMessageHandler]>;
 }
 
 const handleNoFurtherMessages: ReceiveMessageHandler = async (
   _ws: WebSocket,
   _event: MessageEvent,
   _share: ReceivingShare | undefined,
-  _setShare: React.Dispatch<React.SetStateAction<ReceivingShare | undefined>>,
   _setState: React.Dispatch<React.SetStateAction<ReceiveState>>,
 ) => {
   throw new Error("Unexpected message.");
@@ -25,8 +23,7 @@ const handleNoFurtherMessages: ReceiveMessageHandler = async (
 export const handleReceiverAccepted: ReceiveMessageHandler = async (
   _ws: WebSocket,
   incoming: MessageEvent,
-  _share: ReceivingShare | undefined,
-  _setShare: React.Dispatch<React.SetStateAction<ReceivingShare | undefined>>,
+  share: ReceivingShare | undefined,
   _setSendState: React.Dispatch<React.SetStateAction<ReceiveState>>,
 ) => {
   console.log("HandlingRecieverAccepted");
@@ -35,14 +32,13 @@ export const handleReceiverAccepted: ReceiveMessageHandler = async (
   const payload = await incoming.data.arrayBuffer();
   decodeReceiverAccepted(payload);
 
-  return handleMetadata;
+  return [share, handleMetadata];
 };
 
 export const handleMetadata: ReceiveMessageHandler = async (
   _: WebSocket,
   incoming: MessageEvent,
   share: ReceivingShare | undefined,
-  _setShare: React.Dispatch<React.SetStateAction<ReceivingShare | undefined>>,
   _setSendState: React.Dispatch<React.SetStateAction<ReceiveState>>,
 ) => {
   console.log("HandlingMetaData");
@@ -55,5 +51,5 @@ export const handleMetadata: ReceiveMessageHandler = async (
   !decodeMetadata(payload, key);
 
   // TODO: HandleDataChunk
-  return handleNoFurtherMessages;
+  return [share, handleNoFurtherMessages];
 };

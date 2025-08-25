@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Section } from "./section";
 import { Share } from "./send";
 import { Mutex } from "../tube_message_protocol/mutex";
@@ -7,7 +7,7 @@ import { encodeReceiverInitiation } from "../tube_message_protocol/encoding";
 import {
   handleReceiverAccepted,
   ReceiveMessageHandler,
-} from "@/tube_message_protocol/recieve_handlers";
+} from "../tube_message_protocol/recieve_handlers";
 
 export type ReceivingShare = Share & {
   fileName?: string;
@@ -110,6 +110,12 @@ export const Recieve = () => {
     ReceiveState.INPUT,
   );
 
+  const shareRef = useRef(share);
+
+  useEffect(() => {
+    shareRef.current = share;
+  }, [share]);
+
   const startRecieveConnection = (share: ReceivingShare) => {
     let ws: WebSocket;
     ws = new WebSocket(
@@ -134,11 +140,16 @@ export const Recieve = () => {
     let handler: ReceiveMessageHandler = handleReceiverAccepted;
     ws.onmessage = async (message) => {
       await incomingMessageMutex.lock();
-      handler = await handler(ws, message, share, setShare, setReceiveState);
+      let newShare: ReceivingShare | undefined;
+      [newShare, handler] = await handler(
+        ws,
+        message,
+        shareRef.current,
+        setReceiveState,
+      );
+      setShare(newShare);
       incomingMessageMutex.unlock();
     };
-
-    setShare({ ...share });
   };
 
   let component: React.ReactNode;

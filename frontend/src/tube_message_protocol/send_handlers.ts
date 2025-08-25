@@ -7,9 +7,8 @@ export interface SendMessageHandler {
     ws: WebSocket,
     incoming: MessageEvent,
     share: SendingShare | undefined,
-    setShare: React.Dispatch<React.SetStateAction<SendingShare | undefined>>,
     setSendState: React.Dispatch<React.SetStateAction<SendState>>,
-  ): Promise<SendMessageHandler>;
+  ): Promise<[SendingShare | undefined, SendMessageHandler]>;
 }
 
 export const assertBlobMessageType = (message: MessageEvent) => {
@@ -39,7 +38,6 @@ const handleNoFurtherMessages: SendMessageHandler = async (
   _ws: WebSocket,
   _event: MessageEvent,
   _share: SendingShare | undefined,
-  _setShare: React.Dispatch<React.SetStateAction<SendingShare | undefined>>,
   _setState: React.Dispatch<React.SetStateAction<SendState>>,
 ) => {
   throw new Error("Unexpected message.");
@@ -49,7 +47,6 @@ export const handleSenderAccepted: SendMessageHandler = async (
   _: WebSocket,
   incoming: MessageEvent,
   share: SendingShare | undefined,
-  setShare: React.Dispatch<React.SetStateAction<SendingShare | undefined>>,
   setSendState: React.Dispatch<React.SetStateAction<SendState>>,
 ) => {
   console.log("HandleSenderAccepted");
@@ -59,17 +56,15 @@ export const handleSenderAccepted: SendMessageHandler = async (
 
   const newShare = { ...share, shareCode: base64Encode(shareCode) };
 
-  setShare(newShare);
   setSendState(SendState.WAITING);
 
-  return handleReady;
+  return [newShare, handleReady];
 };
 
 const handleReady: SendMessageHandler = async (
   ws: WebSocket,
   incoming: MessageEvent,
   share: SendingShare | undefined,
-  setShare: React.Dispatch<React.SetStateAction<SendingShare | undefined>>,
   setSendState: React.Dispatch<React.SetStateAction<SendState>>,
 ) => {
   console.log("HandleReady");
@@ -89,9 +84,7 @@ const handleReady: SendMessageHandler = async (
     ws.send(encodeMetadata(share?.file));
   }
 
-  setShare(newShare);
-
   setSendState(SendState.ACTIVE);
 
-  return handleNoFurtherMessages;
+  return [newShare, handleNoFurtherMessages];
 };

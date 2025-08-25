@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Section } from "./section";
 import { Mutex } from "../tube_message_protocol/mutex";
 import {
@@ -33,14 +33,10 @@ interface SendSubComponentProps {
 }
 
 interface SendInputProps extends SendSubComponentProps {
-  onInputEntered: () => void;
+  onInputEntered: (file: File) => void;
 }
 
-const SendInput: React.FC<SendInputProps> = ({
-  share,
-  setShare,
-  onInputEntered,
-}) => {
+const SendInput: React.FC<SendInputProps> = ({ share, onInputEntered }) => {
   const [file, setFile] = useState<File | undefined>(undefined);
   return (
     <>
@@ -60,8 +56,8 @@ const SendInput: React.FC<SendInputProps> = ({
           }
 
           if (file) {
-            setShare({ file: file });
-            onInputEntered();
+            console.log(file);
+            onInputEntered(file);
           } else {
             window.alert("Please select a file.");
           }
@@ -115,7 +111,6 @@ const SendError: React.FC<SendSubComponentProps> = ({
   share,
   setSendState,
 }) => {
-  console.error(`Send is in Error state -> `, share);
   return (
     <>
       <p>{share?.error ? share.error : "Oooops, somthing went wrong."}</p>
@@ -133,12 +128,23 @@ export const Send = () => {
   const [share, setShare] = useState<SendingShare | undefined>(undefined);
   const [sendState, setSendingState] = useState<SendState>(SendState.INPUT);
 
-  const startShareConnection = () => {
+  // This means the race condition is way less likely to occur
+  // since on every re-render this will be updated sychronusly
+  // Really I think share should be a useReducer value maybe
+  // with the sendState also encapsulated.
+  const shareRef = useRef(share);
+
+  useEffect(() => {
+    shareRef.current = share;
+  }, [share]);
+
+  const startShareConnection = (file: File) => {
     let ws: WebSocket;
     ws = new WebSocket("ws://localhost:8080/send");
 
     const incomingMessageMutex = new Mutex();
     ws.onopen = () => {
+      setShare({ file });
       // TODO: change this to an encodingFunction
       ws.send(Uint8Array.from([1, 0]).buffer);
     };
@@ -153,9 +159,16 @@ export const Send = () => {
     ws.onmessage = async (message) => {
       try {
         await incomingMessageMutex.lock();
-        handler = await handler(ws, message, share, setShare, setSendingState);
+        let newShare: SendingShare | undefined;
+        [newShare, handler] = await handler(
+          ws,
+          message,
+          shareRef.current,
+          setSendingState,
+        );
+        setShare(newShare);
       } catch (e) {
-        console.error(e);
+        console.error("Error encountered by handler - ", e);
         const err = e instanceof Error ? e.message : "";
         setShare({ ...share, error: err });
         setSendingState(SendState.ERROR);
