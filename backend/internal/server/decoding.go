@@ -68,12 +68,12 @@ func decodeReceiverInitiation(blob []byte) ([]byte, error) {
 		return nil, fmt.Errorf("Message is not a RECEIVER_INITIATION is a {%v}", opcode(op))
 	}
 
-	publicKeyLength := 512
+	publicKeyLength := 550
 	if len(remainingBlob) < publicKeyLength {
 		return nil, fmt.Errorf("Too few bytes (expected %v got %v)).", publicKeyLength, len(remainingBlob))
 	}
 
-	var public_key []byte = remainingBlob[:512]
+	var public_key []byte = remainingBlob[:550]
 
 	return public_key, nil
 }

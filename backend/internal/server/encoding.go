@@ -48,7 +48,7 @@ func encodeRecieverAcceptance() []byte {
 }
 
 func encodeReady(publicKey []byte) ([]byte, error) {
-	publicKeyLength := 512
+	publicKeyLength := 550
 	actualPublicKeyLength := len(publicKey)
 	if actualPublicKeyLength != publicKeyLength {
 		err := fmt.Errorf("Public key should be %d bytes is actually %d.",

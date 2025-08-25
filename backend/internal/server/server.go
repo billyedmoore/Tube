@@ -116,7 +116,10 @@ func isValidShareCode(shareCode string) (bool, string) {
 }
 
 func (h receiverHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+
 	encodedShareCode := r.URL.Query().Get("share_code")
+
+	fmt.Printf("INCOMING ON RECIEVE /receive SHARE_CODE=\"%v\"\n", encodedShareCode)
 
 	isValid, reason := isValidShareCode(encodedShareCode)
 

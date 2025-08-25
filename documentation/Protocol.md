@@ -29,7 +29,7 @@
 | ----------------- | --------- | ----- |
 | opcode            | 1 byte    | 0x03  |
 | version           | 1 byte    | 0x00  |
-| client public key | 512 bytes |       |
+| client public key | 550 bytes |       |
 
 ### Recevier Accepted
 
@@ -44,7 +44,7 @@
 | ----------------- | --------- | ----- |
 | opcode            | 1 byte    | 0x05  |
 | version           | 1 byte    | 0x00  |
-| client public key | 512 bytes |       |
+| client public key | 550 bytes |       |
 
 ### Metadata 
 
